@@ -1,0 +1,22 @@
+{
+  "name": "kyber_read_fifo_8",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "q_kyber READ domain is pure arrival FIFO (ioext_policy_shared.h iosched_kyber_insert L1574-1588 + iosched_pop_head_32 L441-459): submit DESCENDING 4768..4320 -> ISSUE = arrival order 4768,4704,4640,4576,4512,4448,4384,4320. Discriminates kyber FIFO from mq-deadline C-LOOK (which would ISSUE ascending 4320..4768). Verified by tests/io/q_kyber_model.py test_k1.",
+  "expected_dispatch_order": [
+    {"sector": 4768, "op": "read", "nr_sectors": 8},
+    {"sector": 4704, "op": "read", "nr_sectors": 8},
+    {"sector": 4640, "op": "read", "nr_sectors": 8},
+    {"sector": 4576, "op": "read", "nr_sectors": 8},
+    {"sector": 4512, "op": "read", "nr_sectors": 8},
+    {"sector": 4448, "op": "read", "nr_sectors": 8},
+    {"sector": 4384, "op": "read", "nr_sectors": 8},
+    {"sector": 4320, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "invariants": {
+    "complete_count_min": 8,
+    "merge_count_max": 0
+  },
+  "notes": "Sector stride 64 (no physical merge possible; --merge-enable=0 additionally denies scheduler-queue merges). insert_count invariants intentionally absent: block:block_rq_insert never fires for scx_io-managed requests in this kernel (see q_kyber_accept.sh diagnostics); count assertions use ISSUE/COMPLETE instead."}

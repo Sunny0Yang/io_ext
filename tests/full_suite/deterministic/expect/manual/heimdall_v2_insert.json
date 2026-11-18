@@ -1,0 +1,9 @@
+{
+  "name": "heimdall_v2_insert_count_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 8
+  },
+  "notes": "heimdall_v2 insert_total should equal accepted request count. bpftool hm_v2_stats.insert_total >= 8 for 16-IO trace (may be less if overflow)."
+}

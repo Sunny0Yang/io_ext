@@ -1,0 +1,207 @@
+#!/usr/bin/env bpftrace
+/*
+ * scx_io fallback backlog time-series monitor (v3)
+ *
+ * Tracks 100 ms fallback backlog depth and policy lifecycle events.
+ * Uses scx_io_dispatch_request kretprobe for residency tracking (same
+ * pattern as scx_io_bypass_fallback), because scx_io_pop_fallback_request
+ * may not be traceable on all kernel builds.
+ *
+ * Key metrics:
+ *   - sbf_bypass_reason_count: bypass reason distribution
+ *   - sbf_fallback_dispatch_count: dispatches that originated from fallback queue
+ *   - sbf_bpf_normal_dispatch_count: dispatches from BPF normal path
+ *   - Fallback residency time via dispatch_request kretprobe
+ *   - 100 ms TIMELINE_SAMPLE with bypass reason breakdown + fallback_dispatch
+ *   - Policy event markers via scx_io_policy_* kprobes (noinline)
+ */
+
+BEGIN
+{
+  printf("SCX_IO_FALLBACK_BACKLOG_START\n");
+  printf("targets=scx_io_insert_requests,scx_io_bio_should_bypass,scx_io_bypass_request,scx_io_dispatch_request,__blk_mq_sched_dispatch_requests,scx_io_policy_prepare_teardown,scx_io_policy_free\n");
+  printf("reason_enum=0:no_policy,1:policy_unavailable,2:policy_rejected,3:quiesced units=count,ns,us\n\n");
+}
+
+// ===================== INSERT =====================
+kprobe:scx_io_insert_requests
+{
+  @sbf_insert_requests_count++;
+}
+
+// ===================== BIO SHOULD_BYPASS =====================
+kprobe:scx_io_bio_should_bypass
+{
+  @sbf_bio_should_bypass_count++;
+  @sbf_bio_should_bypass_start_ns[tid] = nsecs;
+}
+
+kretprobe:scx_io_bio_should_bypass
+/@sbf_bio_should_bypass_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbf_bio_should_bypass_start_ns[tid]) / 1000;
+  @sbf_bio_should_bypass_us = stats($delta_us);
+  @sbf_bio_should_bypass_us_hist = hist($delta_us);
+  if (retval) { @sbf_bio_bypass_true_count++; } else { @sbf_bio_bypass_false_count++; }
+  delete(@sbf_bio_should_bypass_start_ns[tid]);
+}
+
+// ===================== BYPASS REQUEST =====================
+kprobe:scx_io_bypass_request*
+{
+  $rq = (uint64)arg2;
+  $reason = arg4;
+  @sbf_bypass_request_count++;
+  @sbf_bypass_reason_count[$reason]++;
+  @s_per_bypass_total++;
+
+  if ($reason == 0) { @sbf_no_policy_count++; @s_per_no_policy++; }
+  if ($reason == 1) { @sbf_policy_unavailable_count++; @s_per_policy_unavailable++; }
+  if ($reason == 2) { @sbf_policy_rejected_count++; @s_per_policy_rejected++; }
+  if ($reason == 3) { @sbf_quiesced_count++; @s_per_quiesced++; }
+
+  // Track request entering fallback queue for residency measurement
+  if ($rq != 0) {
+    @sbf_fallback_entry_ts[$rq] = nsecs;
+    @sbf_fallback_entry_reason[$rq] = $reason;
+  }
+
+  @sbf_bypass_func_start_ns[tid] = nsecs;
+}
+
+kretprobe:scx_io_bypass_request*
+/@sbf_bypass_func_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbf_bypass_func_start_ns[tid]) / 1000;
+  @sbf_bypass_func_us = stats($delta_us);
+  @sbf_bypass_request_us_hist = hist($delta_us);
+  delete(@sbf_bypass_func_start_ns[tid]);
+}
+
+// ===================== DISPATCH REQUEST — fallback residency end =====================
+kprobe:scx_io_dispatch_request
+{
+  @sbf_dispatch_request_count++;
+  @sbf_dispatch_func_start_ns[tid] = nsecs;
+  @s_per_dispatch++;
+}
+
+kretprobe:scx_io_dispatch_request
+/@sbf_dispatch_func_start_ns[tid]/
+{
+  // Check if the returned request came from the fallback queue
+  $rq = (uint64)retval;
+  if ($rq != 0) {
+    $start_ns = @sbf_fallback_entry_ts[$rq];
+    if ($start_ns > 0) {
+      // Fallback path dispatch — compute residency
+      @sbf_fallback_dispatch_count++;
+      @s_per_fallback_dispatch++;
+      $residency_us = (nsecs - $start_ns) / 1000;
+      @sbf_fallback_residency_us = stats($residency_us);
+      @sbf_pop_fallback_us_hist = hist($residency_us);
+      $reason = @sbf_fallback_entry_reason[$rq];
+      @sbf_fallback_dispatch_reason_count[$reason]++;
+      delete(@sbf_fallback_entry_ts[$rq]);
+      delete(@sbf_fallback_entry_reason[$rq]);
+    } else {
+      // BPF normal path dispatch
+      @sbf_bpf_normal_dispatch_count++;
+    }
+  }
+  $func_us = (nsecs - @sbf_dispatch_func_start_ns[tid]) / 1000;
+  @sbf_dispatch_func_us = stats($func_us);
+  delete(@sbf_dispatch_func_start_ns[tid]);
+}
+
+// ===================== BLK_MQ TOP-LEVEL DISPATCH =====================
+kprobe:__blk_mq_sched_dispatch_requests
+{
+  @sbf_blk_mq_dispatch_count++;
+  @sbf_blk_mq_dispatch_start_ns[tid] = nsecs;
+}
+
+kretprobe:__blk_mq_sched_dispatch_requests
+/@sbf_blk_mq_dispatch_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbf_blk_mq_dispatch_start_ns[tid]) / 1000;
+  @sbf_blk_mq_dispatch_us = stats($delta_us);
+  delete(@sbf_blk_mq_dispatch_start_ns[tid]);
+}
+
+// ===================== BPF DISPATCH TRACKING =====================
+kprobe:scx_io_note_bpf_dispatch
+{
+  @sbf_bpf_dispatch_count++;
+}
+
+// ===================== POLICY LIFECYCLE (noinline) =====================
+kprobe:scx_io_policy_prepare_teardown
+{
+  $reason = arg2;
+  @sbf_prepare_count++;
+  @sbf_prepare_by_reason[$reason]++;
+  if ($reason == 0) { @sbf_prepare_detach_count++; }
+  if ($reason == 1) { @sbf_prepare_replace_count++; }
+}
+
+kprobe:scx_io_policy_free
+{
+  @sbf_free_count++;
+}
+
+// ===================== 100 ms TIMELINE SAMPLE =====================
+interval:ms:100
+{
+  printf("TIMELINE_SAMPLE timestamp_ms=%llu ts=%llu bypass_total=%llu no_policy=%llu unavailable=%llu rejected=%llu quiesced=%llu fallback_dispatch=%llu dispatch=%llu\n",
+    nsecs / 1000000,
+    nsecs / 1000000000,
+    @s_per_bypass_total,
+    @s_per_no_policy,
+    @s_per_policy_unavailable,
+    @s_per_policy_rejected,
+    @s_per_quiesced,
+    @s_per_fallback_dispatch,
+    @s_per_dispatch);
+
+  zero(@s_per_bypass_total);
+  zero(@s_per_no_policy);
+  zero(@s_per_policy_unavailable);
+  zero(@s_per_policy_rejected);
+  zero(@s_per_quiesced);
+  zero(@s_per_fallback_dispatch);
+  zero(@s_per_dispatch);
+}
+
+END
+{
+  printf("\nSCX_IO_FALLBACK_BACKLOG_SUMMARY_BEGIN\n");
+
+  printf("\n--- Fallback Queue Residency Time (Real waiting time) ---\n");
+  print(@sbf_fallback_residency_us);
+  print(@sbf_pop_fallback_us_hist);
+  print(@sbf_fallback_dispatch_reason_count);
+
+  printf("\n--- Dispatch Origins ---\n");
+  print(@sbf_fallback_dispatch_count);
+  print(@sbf_bpf_normal_dispatch_count);
+  print(@sbf_bpf_dispatch_count);
+
+  printf("\n--- Bypass Reason Distribution ---\n");
+  print(@sbf_bypass_reason_count);
+
+  printf("\n--- Function Overheads (us) ---\n");
+  print(@sbf_bypass_func_us);
+  print(@sbf_dispatch_func_us);
+
+  printf("\n--- Policy Lifecycle Events ---\n");
+  print(@sbf_prepare_count);
+  print(@sbf_prepare_detach_count);
+  print(@sbf_prepare_replace_count);
+  print(@sbf_free_count);
+
+  printf("SCX_IO_FALLBACK_BACKLOG_SUMMARY_END\n");
+
+  clear(@sbf_fallback_entry_ts);
+  clear(@sbf_fallback_entry_reason);
+}

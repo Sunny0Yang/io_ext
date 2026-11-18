@@ -1,0 +1,11 @@
+[global]
+ioengine=libaio
+direct=1
+group_reporting
+time_based
+
+[tenant_b]
+rw=write
+bs=1M
+iodepth=32
+numjobs=1

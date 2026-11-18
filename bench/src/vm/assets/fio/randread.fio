@@ -1,0 +1,11 @@
+[global]
+ioengine=libaio
+direct=1
+group_reporting
+time_based
+
+[tenant_a]
+rw=randread
+bs=4k
+iodepth=2
+numjobs=4

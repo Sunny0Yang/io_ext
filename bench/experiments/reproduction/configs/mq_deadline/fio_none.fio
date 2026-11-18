@@ -1,0 +1,29 @@
+# =========================================================================
+# experiments/reproduction / mq_deadline / fio_none.fio
+# 实验1 mq-deadline：none 臂。4k randrw 70r/30w QD32 60s（[PLAN] 计划固定）
+# 单租户：/data/lc.bin（[MSC] 主会话补定：单租户实验用 lc.bin）；direct=1 [MSC]
+# 日志命名：<algo>_<arm>_<phase> = mq_deadline_none_main（[PLAN] 命名口径）
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/lc.bin
+
+[mqdd_main]
+rw=randrw
+rwmixread=70
+bs=4k
+iodepth=32
+runtime=60
+ramp_time=5
+randseed=2026111400
+write_lat_log=mq_deadline_none_main
+write_bw_log=mq_deadline_none_main
+write_iops_log=mq_deadline_none_main

@@ -1,0 +1,10 @@
+{
+  "name": "kyber_depth_counts",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "complete_count_min": 1500,
+    "merge_count_max": 0
+  },
+  "notes": "Tier-1 completion evidence for the KYBER_DEPTH_SHRINK / KYBER_DEPTH_HOLD dynamic-depth cases (trace kyber_depth_mixed_1608: 1072 reads + 536 writes, R/R/W async batches of 8). complete_count_min 1500 proves the trace IO actually completed through the scheduler at case scale; the per-domain >=500-sample window firing and the depth_limit resize direction are asserted directly from the state_map dump in tests/io/q_kyber_accept.sh (run_depth_case), because the depth law lives in BPF per-hctx state, not in the bpftrace event stream. merge_count_max 0 keeps sample accounting honest: 72-sector strides and cross-op batches admit no plug merges. The state dump itself is the primary evidence (state_map_final.json + depth asserts in the accept log)."
+}

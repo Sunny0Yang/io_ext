@@ -1,0 +1,12 @@
+name: "perf stat CPU counter monitor"
+id: "perf_stat"
+type: "system"
+class_name: "PerfStatMonitorScene"
+module_path: "vm.scene.system.perf_stat"
+parameters:
+  events: ["cycles", "instructions", "cache-misses", "cache-references"]
+  cpu_list: ""
+  sample_interval_ms: 1000
+  duration: 0
+  require_available: false
+  output_dir: "./test_results/perf_stat"

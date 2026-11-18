@@ -1,0 +1,11 @@
+{
+  "name": "kyber_t1_counts",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "complete_count_min": 8,
+    "complete_count_lt": 9,
+    "issue_count_lt": 9,
+    "merge_count_max": 0
+  },
+  "notes": "q_kyber Tier-1 count invariants, STRICTER than the registered expect/manual/kyber_merge_on.json (which uses insert_count_min=1, a dead invariant: block:block_rq_insert never fires for scx_io-managed requests in this kernel, see q_kyber_accept.sh diagnostics + EVOLUTION landmine). Run against traces/micro/kyber_read_fifo_8.json in sync mode with --merge-enable=0. complete_count_min 8 + complete_count_lt 9 => exactly 8 completes; issue_count_lt 9 combined with merge_count_max 0 (merge_count = trace_reqs - issues >= 0 requires issues >= 8) => exactly 8 issues: every trace request inserted once, dispatched once, completed once, no merges. Sectors >2048 avoid partition-scan sector collisions. Companion assertion in q_kyber_accept.sh reads the pinned /sys/fs/bpf/kyber_merge_cfg map via bpftool and asserts enable==0."}

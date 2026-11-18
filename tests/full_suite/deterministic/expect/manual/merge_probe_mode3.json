@@ -1,0 +1,10 @@
+{
+  "name": "merge_probe_mode3_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 1,
+    "complete_count_min": 1
+  },
+  "notes": "mode=3 COUNT_ONLY: records merge attempts but denies; bpftool merge_stats should show calls but no actual merge"
+}

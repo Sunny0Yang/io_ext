@@ -1,0 +1,149 @@
+#!/usr/bin/env bpftrace
+/*
+ * Combined block_mq_latency + io_stack_cpu_cost monitor.
+ *
+ * Captures:
+ * - block_io_start -> block_rq_issue software/block-stack path cost;
+ * - block_rq_insert -> block_rq_issue queue latency when insert tracepoint fires;
+ * - block_rq_issue -> block_rq_complete device/service latency;
+ * - block_rq_insert -> block_rq_complete end-to-end latency when available.
+ *
+ * Same map sizing rationale as block_mq_latency.bt (avoid default 4096-key cap).
+ */
+
+let @biolc_start_ns = hash(1048576);
+let @biolc_latest_start_ns = hash(1024);
+let @biolc_insert_ns = hash(1048576);
+let @biolc_issue_ns = hash(1048576);
+let @biolc_issue_ns_by_dev = hash(1024);
+
+BEGIN
+{
+  printf("BLOCK_IO_LATENCY_COST_START\n");
+  printf("tracepoints=block_io_start,block_rq_insert,block_rq_issue,block_rq_complete units=count,ns,us\n");
+}
+
+tracepoint:block:block_io_start
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @biolc_start_event_count = count();
+  @biolc_start_ns[$d, $s, $n] = nsecs;
+  @biolc_latest_start_ns[$d] = nsecs;
+}
+
+tracepoint:block:block_rq_insert
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @biolc_insert_count = count();
+  @biolc_insert_ns[$d, $s, $n] = nsecs;
+}
+
+tracepoint:block:block_rq_issue
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  $now = nsecs;
+  @biolc_issue_count = count();
+  @biolc_issue_ns[$d, $s, $n] = $now;
+  @biolc_issue_ns_by_dev[$d] = $now;
+
+  if (@biolc_start_ns[$d, $s, $n]) {
+    $stack_ns = $now - @biolc_start_ns[$d, $s, $n];
+    @biolc_stack_exact_match_count = count();
+    @biolc_stack_sample_count = count();
+    @biolc_stack_path_ns = stats($stack_ns);
+    @biolc_stack_path_us = hist($stack_ns / 1000);
+    @biolc_stack_path_us_cpu[cpu] = hist($stack_ns / 1000);
+    delete(@biolc_start_ns[$d, $s, $n]);
+    delete(@biolc_latest_start_ns[$d]);
+  } else if (@biolc_latest_start_ns[$d]) {
+    $stack_fallback_ns = $now - @biolc_latest_start_ns[$d];
+    @biolc_stack_approx_match_count = count();
+    @biolc_stack_sample_count = count();
+    @biolc_stack_path_ns = stats($stack_fallback_ns);
+    @biolc_stack_path_us = hist($stack_fallback_ns / 1000);
+    @biolc_stack_path_us_cpu[cpu] = hist($stack_fallback_ns / 1000);
+    delete(@biolc_latest_start_ns[$d]);
+  }
+
+  if (@biolc_insert_ns[$d, $s, $n]) {
+    $queue_ns = $now - @biolc_insert_ns[$d, $s, $n];
+    @biolc_queue_ns = stats($queue_ns);
+    @biolc_queue_us = hist($queue_ns / 1000);
+    @biolc_queue_sample_count = count();
+  }
+}
+
+tracepoint:block:block_rq_complete
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  $now = nsecs;
+  @biolc_complete_count = count();
+
+  if (@biolc_issue_ns[$d, $s, $n]) {
+    $service_ns = $now - @biolc_issue_ns[$d, $s, $n];
+    @biolc_service_ns = stats($service_ns);
+    @biolc_service_us = hist($service_ns / 1000);
+    @biolc_service_sample_count = count();
+    @biolc_exact_service_count = count();
+    delete(@biolc_issue_ns[$d, $s, $n]);
+    delete(@biolc_issue_ns_by_dev[$d]);
+  } else if (@biolc_issue_ns_by_dev[$d]) {
+    $service_fallback_ns = $now - @biolc_issue_ns_by_dev[$d];
+    @biolc_service_ns = stats($service_fallback_ns);
+    @biolc_service_us = hist($service_fallback_ns / 1000);
+    @biolc_service_sample_count = count();
+    @biolc_approx_service_count = count();
+    delete(@biolc_issue_ns_by_dev[$d]);
+  }
+
+  if (@biolc_insert_ns[$d, $s, $n]) {
+    $e2e_ns = $now - @biolc_insert_ns[$d, $s, $n];
+    @biolc_e2e_ns = stats($e2e_ns);
+    @biolc_e2e_us = hist($e2e_ns / 1000);
+    @biolc_e2e_sample_count = count();
+    delete(@biolc_insert_ns[$d, $s, $n]);
+  }
+
+  delete(@biolc_start_ns[$d, $s, $n]);
+  delete(@biolc_latest_start_ns[$d]);
+}
+
+END
+{
+  printf("BLOCK_IO_LATENCY_COST_SUMMARY_BEGIN\n");
+  print(@biolc_start_event_count);
+  print(@biolc_insert_count);
+  print(@biolc_issue_count);
+  print(@biolc_complete_count);
+  print(@biolc_stack_exact_match_count);
+  print(@biolc_stack_approx_match_count);
+  print(@biolc_stack_sample_count);
+  print(@biolc_queue_sample_count);
+  print(@biolc_exact_service_count);
+  print(@biolc_approx_service_count);
+  print(@biolc_service_sample_count);
+  print(@biolc_e2e_sample_count);
+  print(@biolc_stack_path_ns);
+  print(@biolc_stack_path_us);
+  print(@biolc_stack_path_us_cpu);
+  print(@biolc_queue_ns);
+  print(@biolc_queue_us);
+  print(@biolc_service_ns);
+  print(@biolc_service_us);
+  print(@biolc_e2e_ns);
+  print(@biolc_e2e_us);
+  printf("BLOCK_IO_LATENCY_COST_SUMMARY_END\n");
+  clear(@biolc_start_ns);
+  clear(@biolc_latest_start_ns);
+  clear(@biolc_insert_ns);
+  clear(@biolc_issue_ns);
+  clear(@biolc_issue_ns_by_dev);
+}

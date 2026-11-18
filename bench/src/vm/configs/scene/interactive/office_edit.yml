@@ -1,0 +1,55 @@
+name: "办公文档编辑场景 (AT-SPI2)"
+id: "office_edit"
+type: "interactive"
+class_name: "LibreOfficeEditScene"
+module_path: "src.vm.scene.interactive.office_edit"
+parameters:
+  # 文档操作次数
+  cursor_operations: 50
+  text_insert_operations: 25
+  text_delete_operations: 20
+  text_modify_operations: 30
+  
+  # 演示文稿操作次数
+  slide_add_operations: 10
+  slide_transition_operations: 10
+  
+  # 跨应用操作配置
+  cross_app_operations: 5
+  cross_app_rows_per_copy: 10
+  cross_app_cols_per_copy: 5
+  
+  # 通用配置
+  operation_delay: 0.05
+  test_document: "stress_doc.odt"
+  presentation_template: "slide_template.odp"
+  spreadsheet_data: "big_data.ods"
+  uno_port: 2002
+  
+  # 功能开关
+  enable_document_test: true
+  enable_presentation_test: true
+  enable_cross_app_test: true
+  
+  # 评分阈值 (毫秒) - 名称与 office_file.py 保持一致
+  thresholds:
+    cursor_operation: 50.0
+    text_addition: 100.0
+    text_deletion: 100.0
+    text_modification: 100.0
+    slide_add: 500.0
+    slide_transition: 200.0
+    cross_app: 1000.0
+  
+  # 评分权重
+  weights:
+    cursor_operation: 0.25
+    text_addition: 0.20
+    text_deletion: 0.15
+    text_modification: 0.15
+    slide_add: 0.10
+    slide_transition: 0.05
+    cross_app: 0.10
+  
+  # 结果输出目录
+  output_dir: "./test_results"

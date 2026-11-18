@@ -1,0 +1,201 @@
+# Native-none M2 pressure curve: real YCSB-A foreground plus scalable FIO writer.
+# Every sequence formats the explicitly authorized /dev/sdb test disk, mounts it,
+# and places the YCSB database and FIO file on the same physical device.
+benchmark_name: "Motivation M2 YCSB-A + FIO pressure curve (native none)"
+description: >-
+  Each point is a fresh YCSB-A foreground run and a delayed direct-I/O random-write
+  FIO tenant on the same /dev/sdb filesystem. FIO rate is offered load; all plots
+  use achieved throughput. Results stay under /tmp until archived.
+default_sequence: "M2_NONE_NOISE_0M"
+fail_fast_on_scene_error: true
+
+_native_none: &native_none
+  cleanup_stale_when_no_specs: false
+  cleanup_bpffs_pins: false
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  scheduler: "none"
+  output_dir: "/tmp/motivation_m2_curve_20261030/ycsb"
+  duration: 240
+  drop_caches_before_run: false
+  database:
+    db_type: "rocksdb"
+    data_dir: "/mnt/motivation_m2_curve_20261030/ycsb_db"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: false
+    environment:
+      JAVA_HOME: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+  system:
+    mem_limit_mb: 0
+    auto_format_disk: true
+    format_device: true
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/motivation_m2_curve_20261030_ycsb"
+  io_ext:
+    <<: *native_none
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 480
+      require_samples: true
+      disk_devices: ["sdb"]
+      output_dir: "/tmp/motivation_m2_curve_20261030/system_metric"
+
+io_ext_policy_profiles:
+  native_none:
+    name: "M2 native none, no cgroup I/O control"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: false
+      cleanup_bpffs_pins: false
+
+_fio_parameters: &fio_parameters
+    target_device: "sdb"
+    scheduler: "none"
+    duration: 180
+    drop_caches_before_run: false
+    cooldown_sec: 0
+    output_dir: "/tmp/motivation_m2_curve_20261030/fio"
+    fio_global:
+      ioengine: "io_uring"
+      direct: 1
+      bs: "4k"
+      rw: "randwrite"
+      iodepth: 16
+      numjobs: 1
+      size: "1G"
+      runtime_sec: 110
+      time_based: true
+      group_reporting: true
+    fio_jobs:
+    - name: "m2_background_randwrite"
+      rw: "randwrite"
+      iodepth: 16
+      numjobs: 1
+      size: "1G"
+      startdelay: 45
+      runtime: 60
+    file_name: "/mnt/motivation_m2_curve_20261030/fio_background.dat"
+    io_ext:
+      cleanup_stale: false
+      cleanup_bpffs_pins: false
+      cgroup:
+        path: "/sys/fs/cgroup/motivation_m2_curve_20261030_fio"
+        controllers: ["io"]
+
+# Distinct tenant groups keep FIO offered load isolated to one pressure value per run.
+# Controller values are deliberately absent; no scheduler is pinned except native none.
+tenant_groups:
+  ycsb_foreground:
+    count: 1
+    scene_id_template: "m2_ycsb_fg_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        ycsb_workload:
+          workload_type: "a"
+          recordcount: 100000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 120
+
+  fio_noise_4m:
+    count: 1
+    scene_id_template: "m2_fio_noise_4m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_4m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+          rate: 4194304
+  fio_noise_8m:
+    count: 1
+    scene_id_template: "m2_fio_noise_8m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_8m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+          rate: 8388608
+  fio_noise_16m:
+    count: 1
+    scene_id_template: "m2_fio_noise_16m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_16m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+          rate: 16777216
+
+test_sequences:
+- sequence_id: "M2_NONE_NOISE_0M"
+  name: "YCSB-A solo baseline"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground only"
+    tenant_groups: ["ycsb_foreground"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_4M"
+  name: "YCSB-A + FIO random-write offered 4 MiB/s"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground plus 4 MiB/s FIO background"
+    tenant_groups: ["ycsb_foreground", "fio_noise_4m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_8M"
+  name: "YCSB-A + FIO random-write offered 8 MiB/s"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground plus 8 MiB/s FIO background"
+    tenant_groups: ["ycsb_foreground", "fio_noise_8m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_16M"
+  name: "YCSB-A + FIO random-write offered 16 MiB/s"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground plus 16 MiB/s FIO background"
+    tenant_groups: ["ycsb_foreground", "fio_noise_16m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240

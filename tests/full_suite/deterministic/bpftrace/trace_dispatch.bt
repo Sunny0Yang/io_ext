@@ -1,0 +1,44 @@
+/*
+ * trace_dispatch.bt v2 — DT 事件采集
+ *
+ * 修复要点 (Phase 0):
+ *   - INSERT 改用 tracepoint:block:block_rq_insert (args->sector/nr_sector/rwbs)
+ *     原先 kprobe:scx_io_insert_requests 把 arg1 当作 iosched_insert_ctx*，
+ *     实际 arg1 是 struct blk_mq_hw_ctx*，导致 sector/cgid/nr 全为垃圾值。
+ *   - 新增 ioprio 字段（args->ioprio），用于 RT/BE/IDLE 区分。
+ *   - 保留 ISSUE/COMPLETE 与 BEGIN/END 边界。
+ *
+ * bpftrace 字段参考 (include/trace/events/block.h DECLARE_EVENT_CLASS block_rq):
+ *   args->sector, args->nr_sector, args->bytes, args->rwbs, args->ioprio
+ *
+ * 注意 (Phase-2 修复, 2026-09-01): blk-mq 的 plug-flush 路径把请求列表直接移交
+ *       elevator->ops.insert_requests，全程不触发 block_rq_insert —— scx_io 下
+ *       INSERT 事件曾恒缺失（insert_count 结构性为 0，G2/G4/insert invariants
+ *       全盲；Phase-1 三个策略 subagent 独立交叉确认）。修复：kernel
+ *       block/iosched_ext.c 的 scx_io_insert_requests 循环内补
+ *       trace_block_rq_insert(rq)（每请求一次，先于 accept/bypass 判定）。
+ *       本脚本无需改动即恢复 INSERT 事件流；修复前采集的历史日志没有
+ *       INSERT 行，属预期。
+ */
+
+BEGIN { printf("TRACE_START ts=%llu\n", nsecs); }
+
+tracepoint:block:block_rq_insert
+{
+  printf("INSERT ts=%llu sector=%llu nr=%llu rwbs=%s ioprio=%u bytes=%u\n",
+         nsecs, args->sector, args->nr_sector, args->rwbs, args->ioprio, args->bytes);
+}
+
+tracepoint:block:block_rq_issue
+{
+  printf("ISSUE ts=%llu sector=%llu nr=%llu rwbs=%s ioprio=%u\n",
+         nsecs, args->sector, args->nr_sector, args->rwbs, args->ioprio);
+}
+
+tracepoint:block:block_rq_complete
+{
+  printf("COMPLETE ts=%llu sector=%llu nr=%llu rwbs=%s\n",
+         nsecs, args->sector, args->nr_sector, args->rwbs);
+}
+
+END { printf("TRACE_END ts=%llu\n", nsecs); }

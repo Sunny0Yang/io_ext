@@ -1,0 +1,212 @@
+# High-pressure native-none M2 curve extension (32/64/128 MiB/s + unlimited FIO).
+benchmark_name: "Motivation M2 YCSB-A + FIO high pressure (native none)"
+description: >-
+  Extends the formal none curve with higher offered FIO rates and one unlimited
+  random-write background tenant. Same /dev/sdb per-case format/mount protocol.
+default_sequence: "M2_NONE_NOISE_32M"
+fail_fast_on_scene_error: true
+
+_native_none: &native_none
+  cleanup_stale_when_no_specs: false
+  cleanup_bpffs_pins: false
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  scheduler: "none"
+  output_dir: "/tmp/motivation_m2_high_20261030/ycsb"
+  duration: 240
+  drop_caches_before_run: false
+  database:
+    db_type: "rocksdb"
+    data_dir: "/mnt/motivation_m2_high_20261030/ycsb_db"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: false
+    environment:
+      JAVA_HOME: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+  system:
+    mem_limit_mb: 0
+    auto_format_disk: true
+    format_device: true
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/motivation_m2_high_20261030_ycsb"
+  io_ext:
+    <<: *native_none
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 480
+      require_samples: true
+      disk_devices: ["sdb"]
+      output_dir: "/tmp/motivation_m2_high_20261030/system_metric"
+
+io_ext_policy_profiles:
+  native_none:
+    name: "M2 native none high pressure"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: false
+      cleanup_bpffs_pins: false
+
+_fio_parameters: &fio_parameters
+  target_device: "sdb"
+  scheduler: "none"
+  duration: 180
+  drop_caches_before_run: false
+  cooldown_sec: 0
+  output_dir: "/tmp/motivation_m2_high_20261030/fio"
+  fio_global:
+    ioengine: "io_uring"
+    direct: 1
+    bs: "4k"
+    rw: "randwrite"
+    iodepth: 16
+    numjobs: 1
+    size: "1G"
+    runtime_sec: 110
+    time_based: true
+    group_reporting: true
+  file_name: "/mnt/motivation_m2_high_20261030/fio_background.dat"
+  io_ext:
+    cleanup_stale: false
+    cleanup_bpffs_pins: false
+    cgroup:
+      path: "/sys/fs/cgroup/motivation_m2_high_20261030_fio"
+      controllers: ["io"]
+
+tenant_groups:
+  ycsb_foreground:
+    count: 1
+    scene_id_template: "m2_ycsb_fg_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        ycsb_workload:
+          workload_type: "a"
+          recordcount: 100000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 120
+
+  fio_noise_32m:
+    count: 1
+    scene_id_template: "m2_fio_noise_32m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_32m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+          rate: 33554432
+  fio_noise_64m:
+    count: 1
+    scene_id_template: "m2_fio_noise_64m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_64m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+          rate: 67108864
+  fio_noise_128m:
+    count: 1
+    scene_id_template: "m2_fio_noise_128m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_128m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+          rate: 134217728
+  fio_noise_max:
+    count: 1
+    scene_id_template: "m2_fio_noise_max_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_background_randwrite_max"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 45
+          runtime: 60
+
+test_sequences:
+- sequence_id: "M2_NONE_NOISE_0M"
+  name: "YCSB-A solo baseline"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground only"
+    tenant_groups: ["ycsb_foreground"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_32M"
+  name: "YCSB-A + FIO offered 32 MiB/s"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A plus 32 MiB/s FIO"
+    tenant_groups: ["ycsb_foreground", "fio_noise_32m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_64M"
+  name: "YCSB-A + FIO offered 64 MiB/s"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A plus 64 MiB/s FIO"
+    tenant_groups: ["ycsb_foreground", "fio_noise_64m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_128M"
+  name: "YCSB-A + FIO offered 128 MiB/s"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A plus 128 MiB/s FIO"
+    tenant_groups: ["ycsb_foreground", "fio_noise_128m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2_NONE_NOISE_MAX"
+  name: "YCSB-A + unlimited FIO random write"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A plus unlimited FIO"
+    tenant_groups: ["ycsb_foreground", "fio_noise_max"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240

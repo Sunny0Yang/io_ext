@@ -1,0 +1,289 @@
+# rig_m1_cache: M2 controller arms -- YCSB-A buffered foreground + FIO randwrite
+# O_DIRECT background on kvmhost /dev/sdb. Structure copies
+# rig_motivation_io_behavior/m2_none_pressure.yml EXACTLY (same workload scale,
+# same FIO shape, same timing) so the new io.cost / io.latency arms are directly
+# comparable with the already-collected native-none pressure curve
+# (results/motivation_io_behavior_20261029_1793274117/remote_runs/
+#  m2_curve_formal_20261030) -- the none baseline is REUSED, not rerun.
+#
+# Comparability constraint (do NOT "fix" here): the foreground YCSB config
+# intentionally matches m2_none_pressure.yml field-for-field, including
+# drop_caches_before_run: false and NO block_cache_size override (rocksdbjni
+# 6.2.2 default 8 MiB block cache). Changing the cache caliber would break the
+# none-curve comparison; cache attribution is M1's job, not M2's.
+#
+# Arms (none baseline reused from m2_curve_formal_20261030):
+#   io.cost   : root cgroup io.cost.model + io.cost.qos, sdb RECAL calibration
+#               from paper_sdb/d2_fairness.yml (RECAL(IOCOST): 335544320 B/s,
+#               82000 IOPS linear model; qos enable/rlat/wlat 1000000, min 50,
+#               max 150 -- the paper_sdb io_cost arm verbatim). io.cost is
+#               written at the cgroup ROOT by the YCSB scene during prepare
+#               (setup_iocost_at_root; same mechanism as the fio scene).
+#   io.latency: tenant (foreground YCSB) cgroup io.latency target=12000 us
+#               (12 ms; paper_sdb RECAL(LAT) LC value). io.latency protects the
+#               cgroup it is set on, so it goes on the foreground tenant.
+#
+# Offered FIO rate (8/16 MiB/s) is carried by the two fio_noise_* tenant groups
+# and selected by the runner (--rates 8,16 maps to sequence-substring filters);
+# per §0.1 the analysis must use achieved FIO throughput, never the offered cap.
+#
+# Result convention: results/motivation_io_behavior_20261029_1793274117/remote_runs/<RUN_ID>/
+# (runner: scripts/run_m1_cache_campaign.py --campaign m2ctrl --repeats 3).
+benchmark_name: "M2 YCSB-A + FIO pressure, io.cost / io.latency controller arms (native none)"
+description: >-
+  Each case is a fresh YCSB-A buffered foreground run plus a delayed O_DIRECT
+  random-write FIO tenant on the same freshly formatted /dev/sdb. Scheduler
+  pinned to native none; controller arm = io.cost (root model+qos, sdb RECAL
+  calibration) or io.latency (foreground cgroup target 12 ms). Offered rate is
+  an upper bound; analysis uses achieved throughput.
+default_sequence: "M2CTRL_IO_COST_8M"
+fail_fast_on_scene_error: true
+
+_native_none_io_ext: &native_none_io_ext
+  cleanup_stale_when_no_specs: false
+  cleanup_bpffs_pins: false
+
+# sdb RECAL io.cost calibration (paper_sdb/d2_fairness.yml RECAL(IOCOST) header;
+# same values as the d2_io_cost_ncg2 arm).
+_io_cost_model: &io_cost_model
+  ctrl: "user"
+  model: "linear"
+  rbps: 335544320
+  rseqiops: 82000
+  rrandiops: 82000
+  wbps: 335544320
+  wseqiops: 82000
+  wrandiops: 82000
+_io_cost_qos: &io_cost_qos
+  enable: true
+  ctrl: "user"
+  rpct: 95.0
+  rlat: 1000000
+  wpct: 95.0
+  wlat: 1000000
+  min: 50.0
+  max: 150.0
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  scheduler: "none"
+  output_dir: "/tmp/m2_ctrl_20261031/scene/{group_id}"
+  duration: 240
+  drop_caches_before_run: false   # kept identical to m2_none_pressure.yml for comparability
+  database:
+    db_type: "rocksdb"
+    data_dir: "/mnt/m2_ctrl_20261031/ycsb_db"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: false
+    environment:
+      JAVA_HOME: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+  system:
+    mem_limit_mb: 0
+    auto_format_disk: true
+    format_device: false   # campaign runner formats+mounts sdb per case
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/m2_ctrl_20261031_ycsb"
+  io_ext:
+    <<: *native_none_io_ext
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 480
+      require_samples: true
+      disk_devices: ["sdb"]
+      output_dir: "/tmp/m2_ctrl_20261031/monitor/system_metric"
+
+io_ext_policy_profiles:
+  native_none:
+    name: "M2 controller arms native none, no cgroup I/O limit values"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: false
+      cleanup_bpffs_pins: false
+
+_fio_parameters: &fio_parameters
+  target_device: "sdb"
+  scheduler: "none"
+  duration: 180
+  drop_caches_before_run: false
+  cooldown_sec: 0
+  output_dir: "/tmp/m2_ctrl_20261031/scene/{group_id}"
+  fio_global:
+    ioengine: "io_uring"
+    direct: 1
+    bs: "4k"
+    rw: "randwrite"
+    iodepth: 16
+    numjobs: 1
+    size: "1G"
+    # NOTE (deviation from m2_none_pressure.yml, probed 2026-10-31): the copied
+    # startdelay=45/runtime=60 shape only overlaps ~48% of the YCSB run window
+    # (~121 s with maxexecutiontime=120), failing render_m2_interference.py's
+    # >=70% window-coverage gate. The reused none curve (m2_curve_formal_20261030,
+    # legacy harness) kept fio running across the whole YCSB window. We therefore
+    # lengthen the background write span (scene 110->200 s, job startdelay 45->10,
+    # job runtime 60->185). Offered pressure shape (4 KiB randwrite, iodepth 16,
+    # rate cap) is unchanged; the renderer integrates only inside the YCSB window.
+    runtime_sec: 200
+    time_based: true
+    group_reporting: true
+    # Per-second bandwidth logging -- measurement only, mirrors what the legacy
+    # m2_curve_formal runner injected via --write_bw_log/--log_avg_msec=1000/
+    # --log_unix_epoch=1 so the window-integral achieved-throughput methodology
+    # of render_m2_interference.py applies unchanged. No workload-caliber change.
+    write_bw_log: "background"
+    log_avg_msec: 1000
+    log_unix_epoch: 1
+  fio_jobs:
+  - name: "m2_ctrl_background_randwrite"
+    rw: "randwrite"
+    iodepth: 16
+    numjobs: 1
+    size: "1G"
+    startdelay: 10
+    runtime: 185
+  file_name: "/mnt/m2_ctrl_20261031/fio_background.dat"
+  io_ext:
+    cleanup_stale: false
+    cleanup_bpffs_pins: false
+    cgroup:
+      path: "/sys/fs/cgroup/m2_ctrl_20261031_fio"
+      controllers: ["io"]
+
+tenant_groups:
+  # ---------- foreground YCSB-A variants, one per controller arm ----------
+  ycsb_fg_io_cost:
+    count: 1
+    scene_id_template: "m2ctrl_ycsb_io_cost_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        # io.cost model+qos are written at the cgroup ROOT during scene prepare.
+        io_ext:
+          <<: *native_none_io_ext
+          root_cgroup:
+            path: "/sys/fs/cgroup"
+            controllers: ["io"]
+          cgroup:
+            path: "/sys/fs/cgroup/m2_ctrl_20261031_ycsb"
+            controllers: ["io"]
+            io_cost:
+              model: *io_cost_model
+              qos: *io_cost_qos
+        ycsb_workload:
+          workload_type: "a"
+          recordcount: 100000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 120
+  ycsb_fg_io_latency:
+    count: 1
+    scene_id_template: "m2ctrl_ycsb_io_latency_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        # io.latency protects the cgroup it is set on -> foreground tenant,
+        # target 12000 us (12 ms, paper_sdb RECAL(LAT) LC value).
+        io_ext:
+          <<: *native_none_io_ext
+          cgroup:
+            path: "/sys/fs/cgroup/m2_ctrl_20261031_ycsb"
+            controllers: ["io"]
+            io_latency:
+              target: 12000
+        ycsb_workload:
+          workload_type: "a"
+          recordcount: 100000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 120
+
+  # ---------- background FIO writers (offered 8 / 16 MiB/s) ----------
+  fio_noise_8m:
+    count: 1
+    scene_id_template: "m2ctrl_fio_noise_8m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_ctrl_background_randwrite_8m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 10
+          runtime: 185
+          rate: 8388608
+  fio_noise_16m:
+    count: 1
+    scene_id_template: "m2ctrl_fio_noise_16m_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *fio_parameters
+        fio_jobs:
+        - name: "m2_ctrl_background_randwrite_16m"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          startdelay: 10
+          runtime: 185
+          rate: 16777216
+
+test_sequences:
+- sequence_id: "M2CTRL_IO_COST_8M"
+  name: "YCSB-A + FIO 8 MiB/s, root io.cost (sdb RECAL calibration)"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground (io.cost at root) plus 8 MiB/s FIO background"
+    tenant_groups: ["ycsb_fg_io_cost", "fio_noise_8m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2CTRL_IO_COST_16M"
+  name: "YCSB-A + FIO 16 MiB/s, root io.cost (sdb RECAL calibration)"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground (io.cost at root) plus 16 MiB/s FIO background"
+    tenant_groups: ["ycsb_fg_io_cost", "fio_noise_16m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2CTRL_IO_LAT_8M"
+  name: "YCSB-A + FIO 8 MiB/s, foreground io.latency target 12 ms"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground (io.latency) plus 8 MiB/s FIO background"
+    tenant_groups: ["ycsb_fg_io_latency", "fio_noise_8m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240
+- sequence_id: "M2CTRL_IO_LAT_16M"
+  name: "YCSB-A + FIO 16 MiB/s, foreground io.latency target 12 ms"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground (io.latency) plus 16 MiB/s FIO background"
+    tenant_groups: ["ycsb_fg_io_latency", "fio_noise_16m"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 240

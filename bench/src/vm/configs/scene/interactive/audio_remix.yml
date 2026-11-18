@@ -1,0 +1,12 @@
+name: "音频混音场景"
+id: "audio_remix"
+type: "interactive"
+class_name: "AudioRemixScene" 
+module_path: "src.vm.scene.interactive.audio_remix"
+parameters:
+  duration: 0
+  audio_count: 4
+  loopback_count: 4
+  sample_rate: 48000
+  latency_values: ["1024/48000", "512/48000", "256/48000", "128/48000"]
+  monitor_interval: 1

@@ -1,0 +1,31 @@
+name: "io-ext MySQL OLTP workload template"
+id: "ioext_mysql_oltp_workload"
+type: "io_ext"
+class_name: "IoExtMysqlScene"
+module_path: "vm.scene.io_ext.mysql_oltp"
+parameters:
+  target_device: "nvme0n1"
+  mysql:
+    data_dir: "/tmp/mysql_data"
+    socket: "/tmp/mysql.sock"
+    port: 3306
+    buffer_pool_size: 256
+    sysbench_test: "oltp_read_write"
+    sysbench_tables: 10
+    sysbench_table_size: 10000
+    sysbench_threads: 4
+    sysbench_time: 60
+    sysbench_rand_type: "uniform"
+  io_ext:
+    scheduler: "scx_io"
+    cgroup:
+      path: "/sys/fs/cgroup/io_ext_arena"
+      controllers: ["io"]
+      io_weight: null
+      io_max: null
+    loaders: []
+    cleanup_stale: true
+    cleanup_bpffs_pins: false
+  output_dir: "./test_results/io_ext/mysql_oltp"
+  duration: 240
+  drop_caches_before_run: true

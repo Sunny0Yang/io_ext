@@ -1,0 +1,731 @@
+benchmark_name: dynamic tenant validation (feasible schedule vs best-static)
+description: 'Contract 7.x validation AMENDED 20261104: the dynamic trajectory must stay under an iox
+  policy the whole run (no native phase). Under the same-arbiter-family constraint the schedule DP over
+  iox arms gives a whole-run resident (f1_arbfb, num_transitions=0) as the optimum, so the dynamic arm
+  runs as a whole-run resident exactly like a matrix3 static arm; the iox-only loss equals the best static
+  loss by identity. Native-mixed v3 (bfq at T5) would have been -13.6% vs the same static -- reported
+  for the ledger, NOT executed. Native bfq whole-run remains as the reference arm. No post-hoc schedule
+  changes; all failures stay in the ledger.'
+validation_schedule:
+  source: /opt/ioext/results/dyn_tenant_kvmhost/schedule_feasible_iox_only.json
+  arm_sequence:
+  - f1_arbfb
+  - f1_arbfb
+  - f1_arbfb
+  - f1_arbfb
+  - f1_arbfb
+  - f1_arbfb
+  num_transitions: 0
+  initial_arm: f1_arbfb
+  iox_only: true
+  decision: COINCIDE_DP_IS_WHOLE_RUN
+  note: 'contract 20261104 amendment: iox policy resident the whole run; see schedule_feasible_iox_only.json'
+fail_fast_on_scene_error: true
+io_ext_policy_profiles:
+  X_x1_qnone:
+    name: dynamic tenant static io_ext arm X_x1_qnone
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters: []
+      cgroup_policies:
+      - name: ta_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x2_qfifo_wdrr:
+    name: dynamic tenant static io_ext arm X_x2_qfifo_wdrr
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x2_qfifo_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x3_qddl_wdrr:
+    name: dynamic tenant static io_ext arm X_x3_qddl_wdrr
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x3_qddl_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x4_spwedf_wdrr:
+    name: dynamic tenant static io_ext arm X_x4_spwedf_wdrr
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x4_spwedf_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_sp_edf
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_wedf
+        path: /opt/io-ext/userspace/loader_q_wedf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_wedf
+        path: /opt/io-ext/userspace/loader_q_wedf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_wedf
+        path: /opt/io-ext/userspace/loader_q_wedf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  F_f1_arbfb:
+    name: dynamic tenant static io_ext arm F_f1_arbfb
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_f1_arbfb_feedback_arb
+        path: /opt/io-ext/userspace/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_arm_smoke_qfifo_wdrr:
+    name: dynamic tenant static io_ext arm X_arm_smoke_qfifo_wdrr
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_arm_smoke_qfifo_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_smokeab_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_smokeab_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  F_f1_arbfb_s101:
+    name: dynamic tenant static io_ext arm F_f1_arbfb (validation seed 20261204, retargeted)
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: false
+      cleanup_bpffs_pins: false
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_f1_arbfb_feedback_arb
+        path: /opt/io-ext/userspace/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s101_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s101_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s101_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s101_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      cleanup_stale_when_no_specs: false
+      loader_start_gap_sec: 0.5
+  F_f1_arbfb_s102:
+    name: dynamic tenant static io_ext arm F_f1_arbfb (validation seed 20261205, retargeted)
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: false
+      cleanup_bpffs_pins: false
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_f1_arbfb_feedback_arb
+        path: /opt/io-ext/userspace/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s102_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s102_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s102_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s102_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      cleanup_stale_when_no_specs: false
+      loader_start_gap_sec: 0.5
+  F_f1_arbfb_s103:
+    name: dynamic tenant static io_ext arm F_f1_arbfb (validation seed 20261206, retargeted)
+    target_device: sdc
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: false
+      cleanup_bpffs_pins: false
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_f1_arbfb_feedback_arb
+        path: /opt/io-ext/userspace/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s103_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s103_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s103_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_f1_arbfb_s103_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      cleanup_stale_when_no_specs: false
+      loader_start_gap_sec: 0.5
+scenes:
+  ib_rdyn_valid_f1_arbfb_s101:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: sdc
+      scheduler: scx_io
+      timeline_id: valid_f1_arbfb_s101
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/valid_f1_arbfb_s101
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+      randseed_base: 20261204
+  ib_rdyn_valid_n3_native_bfq_s101:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: sdc
+      scheduler: bfq
+      timeline_id: valid_n3_native_bfq_s101
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/valid_n3_native_bfq_s101
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+      randseed_base: 20261204
+  ib_rdyn_valid_f1_arbfb_s102:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: sdc
+      scheduler: scx_io
+      timeline_id: valid_f1_arbfb_s102
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/valid_f1_arbfb_s102
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+      randseed_base: 20261205
+  ib_rdyn_valid_n3_native_bfq_s102:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: sdc
+      scheduler: bfq
+      timeline_id: valid_n3_native_bfq_s102
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/valid_n3_native_bfq_s102
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+      randseed_base: 20261205
+  ib_rdyn_valid_f1_arbfb_s103:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: sdc
+      scheduler: scx_io
+      timeline_id: valid_f1_arbfb_s103
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/valid_f1_arbfb_s103
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+      randseed_base: 20261206
+  ib_rdyn_valid_n3_native_bfq_s103:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: sdc
+      scheduler: bfq
+      timeline_id: valid_n3_native_bfq_s103
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/valid_n3_native_bfq_s103
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+      randseed_base: 20261206
+test_sequences:
+- sequence_id: DYN_valid_f1_arbfb_s101
+  name: 'validation dynamic arm (iox-only schedule: whole-run resident f1_arbfb, num_transitions=0) seed
+    20261204'
+  io_ext_policy: F_f1_arbfb_s101
+  steps:
+  - name: validation dynamic schedule (whole-run resident)
+    scenes:
+    - ib_rdyn_valid_f1_arbfb_s101
+    duration: 600
+    tenant_count: 4
+- sequence_id: DYN_valid_n3_native_bfq_s101
+  name: validation native reference (n3 bfq whole-run) seed 20261204
+  io_ext_policy: native
+  steps:
+  - name: validation native reference bfq
+    scenes:
+    - ib_rdyn_valid_n3_native_bfq_s101
+    duration: 600
+    tenant_count: 4
+- sequence_id: DYN_valid_f1_arbfb_s102
+  name: 'validation dynamic arm (iox-only schedule: whole-run resident f1_arbfb, num_transitions=0) seed
+    20261205'
+  io_ext_policy: F_f1_arbfb_s102
+  steps:
+  - name: validation dynamic schedule (whole-run resident)
+    scenes:
+    - ib_rdyn_valid_f1_arbfb_s102
+    duration: 600
+    tenant_count: 4
+- sequence_id: DYN_valid_n3_native_bfq_s102
+  name: validation native reference (n3 bfq whole-run) seed 20261205
+  io_ext_policy: native
+  steps:
+  - name: validation native reference bfq
+    scenes:
+    - ib_rdyn_valid_n3_native_bfq_s102
+    duration: 600
+    tenant_count: 4
+- sequence_id: DYN_valid_f1_arbfb_s103
+  name: 'validation dynamic arm (iox-only schedule: whole-run resident f1_arbfb, num_transitions=0) seed
+    20261206'
+  io_ext_policy: F_f1_arbfb_s103
+  steps:
+  - name: validation dynamic schedule (whole-run resident)
+    scenes:
+    - ib_rdyn_valid_f1_arbfb_s103
+    duration: 600
+    tenant_count: 4
+- sequence_id: DYN_valid_n3_native_bfq_s103
+  name: validation native reference (n3 bfq whole-run) seed 20261206
+  io_ext_policy: native
+  steps:
+  - name: validation native reference bfq
+    scenes:
+    - ib_rdyn_valid_n3_native_bfq_s103
+    duration: 600
+    tenant_count: 4
+default_sequence: DYN_valid_f1_arbfb_s101

@@ -1,0 +1,157 @@
+benchmark_name: isol_bench rig dynamic tenant timeline (independent calibration, virtme)
+description: 'Independent solo calibration for the dynamic multi-tenant contract: each tenant solo for
+  120s (throughput + p50/p99 from the same hist method as M2), plus a static worst coexistence T4={A,C,D}
+  run (2 phases x 60s) for the L decision, D pressure validation and guardrail feasibility. C runs UNLIMITED
+  (scene cannot apply fio --rate yet): conservative upper bound on contention. Native scheduler=none only.'
+fail_fast_on_scene_error: true
+scenes:
+  ib_rdyn_calib_a:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: calib_a
+      phase_length_sec: 120
+      num_phases: 1
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/calib_a
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 270
+      tenants:
+      - a
+      tenant_windows:
+        a:
+        - 1
+        - 1
+  ib_rdyn_calib_b:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: calib_b
+      phase_length_sec: 120
+      num_phases: 1
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/calib_b
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 270
+      tenants:
+      - b
+      tenant_windows:
+        b:
+        - 1
+        - 1
+  ib_rdyn_calib_c:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: calib_c
+      phase_length_sec: 120
+      num_phases: 1
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/calib_c
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 270
+      tenants:
+      - c
+      tenant_windows:
+        c:
+        - 1
+        - 1
+  ib_rdyn_calib_d:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: calib_d
+      phase_length_sec: 120
+      num_phases: 1
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/calib_d
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 270
+      tenants:
+      - d
+      tenant_windows:
+        d:
+        - 1
+        - 1
+  ib_rdyn_calib_t4:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: calib_t4
+      phase_length_sec: 60
+      num_phases: 2
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/calib_t4
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 270
+      tenants:
+      - a
+      - c
+      - d
+      tenant_windows:
+        a:
+        - 1
+        - 2
+        c:
+        - 1
+        - 2
+        d:
+        - 1
+        - 2
+test_sequences:
+- sequence_id: DYN_calib_a
+  name: tenant a solo calibration (120s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_calib_a solo phase
+    scenes:
+    - ib_rdyn_calib_a
+    duration: 270
+- sequence_id: DYN_calib_b
+  name: tenant b solo calibration (120s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_calib_b solo phase
+    scenes:
+    - ib_rdyn_calib_b
+    duration: 270
+- sequence_id: DYN_calib_c
+  name: tenant c solo calibration (120s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_calib_c solo phase
+    scenes:
+    - ib_rdyn_calib_c
+    duration: 270
+- sequence_id: DYN_calib_d
+  name: tenant d solo calibration (120s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_calib_d solo phase
+    scenes:
+    - ib_rdyn_calib_d
+    duration: 270
+- sequence_id: DYN_calib_t4
+  name: static T4={A,C,D} worst coexistence (2x60s, C unlimited)
+  io_ext_policy: native
+  steps:
+  - name: DYN_calib_t4 two-phase static coexistence
+    scenes:
+    - ib_rdyn_calib_t4
+    duration: 270
+default_sequence: DYN_calib_t4

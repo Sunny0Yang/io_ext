@@ -1,0 +1,11 @@
+{
+  "name": "kyber_merge_off_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 8,
+    "complete_count_min": 8,
+    "merge_coverage_min": 64
+  },
+  "notes": "q_kyber Tier-1, --merge-enable=0, sync-mode trace (adjacent_read_8). Same observable invariants as kyber_merge_on: in sync mode (1-in-flight) no merges occur under either flag, and --merge-enable is config-only on this kernel (no bio_merge hook; plug merges bypass allow_merge — Phase-1 finding). The pair's real distinction is the kyber_merge_cfg map value (enable=0 vs 1), asserted via bpftool in tests/io/q_kyber_accept.sh. insert_count_min: 8 restored by the Phase-2 kernel fix (scx_io_insert_requests emits trace_block_rq_insert per request)."
+}

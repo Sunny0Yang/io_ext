@@ -1,0 +1,5 @@
+{
+  "schema": "io_ext_artifact/d2/1",
+  "contents": "scripts-and-docs-only",
+  "note": "D2 rerun figure-rendering scripts + final report only. Raw runs, summary CSVs and figures are not shipped; regenerate via experiments/d2_rerun_kvmhost/."
+}

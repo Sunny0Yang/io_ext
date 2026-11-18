@@ -1,0 +1,14 @@
+{
+  "name": "kyber_merge_cov",
+  "tier": 2,
+  "match": "invariants_only",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "4 adjacent 4K reads [12288,12320) then 4 adjacent 4K writes [12544,12576) as contiguous same-op runs (plug merges are TAIL-ONLY in this kernel: blk-merge.c blk_attempt_plug_merge L1095-1099 — interleaved submission never merges), --merge-enable=1: plug merges collapse to 1-2 read requests + 1-2 write requests covering both ranges (total ISSUE nr == 64). Mirrors mqdd M05 merge-coverage semantics but split across two domains so G1 (max_inflight>=2) is achievable: read ISSUE and write ISSUE fire in the same dispatch run before either completes. NOTE: plug merges bypass the allow_merge/bio_merge hooks, so this case demonstrates merge BEHAVIOR; the --merge-enable flag itself is only observable via the kyber_merge_cfg map assertion in q_kyber_accept.sh.",
+  "invariants": {
+    "merge_coverage_min": 64,
+    "merge_count_min": 1,
+    "issue_count_lt": 8,
+    "complete_count_min": 1
+  },
+  "expected_merge": true,
+  "notes": "NEVER exact order (merge count/pattern nondeterministic: issue_count 2..7 acceptable, merge_count = trace_reqs - issues must be >=1). merge_coverage_min 64 = full 64-sector range covered by merged ISSUEs. Insert-count invariants intentionally absent (block_rq_insert dead under scx_io). Run as diagnostic-tier in q_kyber_accept.sh: strict G2 (>=2 OTHERS outstanding at an ISSUE) is structurally impossible when plug merging collapses 8 bios to <=2 issues, so this case gates on the literal G2 form (>=2 requests pending-not-completed at an ISSUE ts) and is not counted toward strict Tier-2 PASS."}

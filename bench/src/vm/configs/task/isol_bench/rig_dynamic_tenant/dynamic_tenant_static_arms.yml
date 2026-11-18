@@ -1,0 +1,1109 @@
+benchmark_name: isol_bench rig dynamic tenant static arms (main campaign, virtme)
+description: 'Static-arm tuning matrix (contract 7.10/7.11, frozen seed base 20261103, L=90s, 1 pre-declared
+  run per arm). Native arms N1-N4 set the block scheduler in the timeline scene. io_ext arms run device
+  scheduler=scx_io with a resident global loader scene (arbiters first, then per-tenant q policies attached
+  to the tenant cgroups /sys/fs/cgroup/rdyn_<seq>_t{a..d} pre-created by the runner). cleanup_stale/cleanup_bpffs_pins
+  stay false in the timeline scene (forbidden while tenants are active); the GLOBAL loader scene may clean
+  stale loaders/pins because it runs before any tenant exists. C1-C4 (cgroup io.max / io.bfq.weight /
+  io.latency / io.cost) are SUPPORTED since 20261105 (the old contract deviation -- no scene support,
+  no calibrated constants -- is resolved): the timeline scene applies io_ext.cgroup_tenant_controls per
+  tenant at spawn and io_ext.io_cost model/qos once at setup (tenant_weights become per-tenant io.weight
+  device lines), each write strictly read-back verified (a missing io.* file or a mismatching line fails
+  the run). Constants derived from the frozen contract calibration (rate_b_mib_s=299, rate_c_mib_s=198,
+  solo_d_mib_s=207.617449760437, solo p99_us_steady=419.84/9240.576/11862.016/5079.04): C1 caps B/C rbps
+  at the frozen rates 299/198 MiB/s and D wbps at floor(0.8*solo_d 207.6174)=166 MiB/s (A uncapped, latency-critical
+  foreground); C2 io.bfq.weight A:C:B:D=400:200:100:100 (STATIC_ARM_WEIGHT, ''default <w>'' lines); C3
+  io.latency targets ceil(2*solo p99_steady up to the next 1000us) = a 1000 / b 19000 / c 24000 / d 11000
+  us; C4 root model+qos from DYN_TENANT_IOCOST_COEF_JSON (iocost_coef_gen measured on the campaign disk)
+  with the same 400:200:100:100 per-tenant io.weight weights. frozen L=90s.'
+fail_fast_on_scene_error: true
+scenes:
+  ib_rdyn_arm_n1_native_none:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: arm_n1_native_none
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_n1_native_none
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: &id001
+        formal_phase_length_sec: 90.0
+        l_decision:
+          start_sec: 60
+          growth: 1.5
+          max_rounds: 2
+          criteria:
+          - 'L1: A per-phase p99 window samples >= 100 (T4 worst case)'
+          - 'L3: B/C/D convergence <= L/3'
+          status: decided
+        rate_b_mib_s: 299
+        rate_c_mib_s: 198
+        d_rate: unlimited
+        d_pressure_fraction_of_solo: 0.23987894097889575
+        seed_base: 20261103
+        service_preference: A > C > B = D
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+        calibration_json_sha256: e9da3dcf3dcdafee4de212bb8fb44819fd950459ba5faccc8ed57eafe8192d96
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_n2_native_mqddl:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: mq-deadline
+      timeline_id: arm_n2_native_mqddl
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_n2_native_mqddl
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_n3_native_bfq:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: bfq
+      timeline_id: arm_n3_native_bfq
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_n3_native_bfq
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_n4_native_kyber:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: kyber
+      timeline_id: arm_n4_native_kyber
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_n4_native_kyber
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x1_qnone:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x1_qnone
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x1_qnone
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x2_qfifo_wdrr:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x2_qfifo_wdrr
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x2_qfifo_wdrr
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x3_qddl_wdrr:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x3_qddl_wdrr
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x3_qddl_wdrr
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x4_spwedf_wdrr:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x4_spwedf_wdrr
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x4_spwedf_wdrr
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_f1_arbfb:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_f1_arbfb
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_f1_arbfb
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x5_qkyber:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x5_qkyber
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x5_qkyber
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x6_qratelimit_wdrr:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x6_qratelimit_wdrr
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x6_qratelimit_wdrr
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_x7_fifo_arbiocost:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_x7_fifo_arbiocost
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_x7_fifo_arbiocost
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_c1_io_max:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: arm_c1_io_max
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_c1_io_max
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+        cgroup_tenant_controls:
+          b:
+            io_max:
+              rbps: 313524224
+              wbps: max
+              riops: max
+              wiops: max
+          c:
+            io_max:
+              rbps: 207618048
+              wbps: max
+              riops: max
+              wiops: max
+          d:
+            io_max:
+              rbps: max
+              wbps: 174063616
+              riops: max
+              wiops: max
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_c2_bfq_weight:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: bfq
+      timeline_id: arm_c2_bfq_weight
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_c2_bfq_weight
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+        cgroup_tenant_controls:
+          a:
+            io_bfq_weight: 400
+          c:
+            io_bfq_weight: 200
+          b:
+            io_bfq_weight: 100
+          d:
+            io_bfq_weight: 100
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_c3_io_latency:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: arm_c3_io_latency
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_c3_io_latency
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+        cgroup_tenant_controls:
+          a:
+            io_latency:
+              target: 1000
+          b:
+            io_latency:
+              target: 19000
+          c:
+            io_latency:
+              target: 24000
+          d:
+            io_latency:
+              target: 11000
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_c4_io_cost:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: arm_c4_io_cost
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_c4_io_cost
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+        io_cost:
+          model:
+            ctrl: user
+            model: linear
+            rbps: 980050351
+            rseqiops: 134364
+            rrandiops: 25771
+            wbps: 150547066
+            wseqiops: 44904
+            wrandiops: 9623
+          qos:
+            enable: 1
+            ctrl: user
+            rpct: 95
+            rlat: 20000
+            wpct: 95
+            wlat: 20000
+            min: 50
+            max: 150
+          tenant_weights:
+            a: 400
+            c: 200
+            b: 100
+            d: 100
+      duration: 690
+      frozen_contract: *id001
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+  ib_rdyn_arm_smokeab:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: arm_smokeab
+      phase_length_sec: 15
+      num_phases: 2
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/arm_smokeab
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 180
+      tenants:
+      - a
+      - b
+      tenant_windows:
+        a:
+        - 1
+        - 2
+        b:
+        - 2
+        - 2
+io_ext_policy_profiles:
+  X_x1_qnone:
+    name: dynamic tenant static io_ext arm X_x1_qnone
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x1_qnone
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters: []
+      cgroup_policies:
+      - name: ta_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_none
+        path: /opt/io-ext/userspace/loader_q_none
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x1_qnone_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x2_qfifo_wdrr:
+    name: dynamic tenant static io_ext arm X_x2_qfifo_wdrr
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x2_qfifo_wdrr
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x2_qfifo_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x2_qfifo_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x3_qddl_wdrr:
+    name: dynamic tenant static io_ext arm X_x3_qddl_wdrr
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x3_qddl_wdrr
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x3_qddl_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_ddl
+        path: /opt/io-ext/userspace/loader_q_ddl
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x3_qddl_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x4_spwedf_wdrr:
+    name: dynamic tenant static io_ext arm X_x4_spwedf_wdrr
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x4_spwedf_wdrr
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x4_spwedf_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_sp_edf
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_wedf
+        path: /opt/io-ext/userspace/loader_q_wedf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_wedf
+        path: /opt/io-ext/userspace/loader_q_wedf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_wedf
+        path: /opt/io-ext/userspace/loader_q_wedf
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x4_spwedf_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  F_f1_arbfb:
+    name: dynamic tenant static io_ext arm F_f1_arbfb
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_f1_arbfb
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_f1_arbfb_feedback_arb
+        path: /opt/io-ext/userspace/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_f1_arbfb_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  X_x5_qkyber:
+    name: dynamic tenant static io_ext arm X_x5_qkyber
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x5_qkyber
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters: []
+      cgroup_policies: []
+      root_policies:
+      - name: X_x5_qkyber_kyber_root
+        path: /opt/io-ext/userspace/loader_q_kyber
+        scope: root_policy
+        args:
+        - -c
+        - /sys/fs/cgroup
+        - --read-target-ns
+        - '2000000'
+        - --write-target-ns
+        - '10000000'
+  X_x6_qratelimit_wdrr:
+    name: dynamic tenant static io_ext arm X_x6_qratelimit_wdrr
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x6_qratelimit_wdrr
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters: []
+      cgroup_policies:
+      - name: tb_q_ratelimit
+        path: /opt/io-ext/userspace/loader_q_ratelimit
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x6_qratelimit_wdrr_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+        - --rate-mib-s
+        - '299'
+      - name: tc_q_ratelimit
+        path: /opt/io-ext/userspace/loader_q_ratelimit
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x6_qratelimit_wdrr_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+        - --rate-mib-s
+        - '198'
+      - name: td_q_ratelimit
+        path: /opt/io-ext/userspace/loader_q_ratelimit
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x6_qratelimit_wdrr_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+        - --rate-mib-s
+        - '166'
+  X_x7_fifo_arbiocost:
+    name: dynamic tenant static io_ext arm X_x7_fifo_arbiocost
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_x7_fifo_arbiocost
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_x7_fifo_arbiocost_iocost_arb
+        path: /opt/io-ext/userspace/loader_arb_iocost
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x7_fifo_arbiocost_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x7_fifo_arbiocost_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x7_fifo_arbiocost_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_x7_fifo_arbiocost_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      arbiter_ready_timeout_sec: 30
+  X_arm_smoke_qfifo_wdrr:
+    name: dynamic tenant static io_ext arm X_arm_smoke_qfifo_wdrr
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_static_arms/loader_scene_logs/arm_smokeab
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: X_arm_smoke_qfifo_wdrr_wdrr_arb
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_smokeab_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/io-ext/userspace/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_arm_smokeab_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+test_sequences:
+- sequence_id: DYN_arm_n1_native_none
+  name: static arm n1_native_none native scheduler=none
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_n1_native_none six phases
+    scenes:
+    - ib_rdyn_arm_n1_native_none
+    duration: 690
+- sequence_id: DYN_arm_n2_native_mqddl
+  name: static arm n2_native_mqddl native scheduler=mq-deadline
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_n2_native_mqddl six phases
+    scenes:
+    - ib_rdyn_arm_n2_native_mqddl
+    duration: 690
+- sequence_id: DYN_arm_n3_native_bfq
+  name: static arm n3_native_bfq native scheduler=bfq
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_n3_native_bfq six phases
+    scenes:
+    - ib_rdyn_arm_n3_native_bfq
+    duration: 690
+- sequence_id: DYN_arm_n4_native_kyber
+  name: static arm n4_native_kyber native scheduler=kyber
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_n4_native_kyber six phases
+    scenes:
+    - ib_rdyn_arm_n4_native_kyber
+    duration: 690
+- sequence_id: DYN_arm_x1_qnone
+  name: static arm x1_qnone io_ext qnone (scx_io + resident loader)
+  io_ext_policy: X_x1_qnone
+  steps:
+  - name: DYN_arm_x1_qnone six phases
+    scenes:
+    - ib_rdyn_arm_x1_qnone
+    duration: 690
+- sequence_id: DYN_arm_x2_qfifo_wdrr
+  name: static arm x2_qfifo_wdrr io_ext qfifo_wdrr (scx_io + resident loader)
+  io_ext_policy: X_x2_qfifo_wdrr
+  steps:
+  - name: DYN_arm_x2_qfifo_wdrr six phases
+    scenes:
+    - ib_rdyn_arm_x2_qfifo_wdrr
+    duration: 690
+- sequence_id: DYN_arm_x3_qddl_wdrr
+  name: static arm x3_qddl_wdrr io_ext qddl_wdrr (scx_io + resident loader)
+  io_ext_policy: X_x3_qddl_wdrr
+  steps:
+  - name: DYN_arm_x3_qddl_wdrr six phases
+    scenes:
+    - ib_rdyn_arm_x3_qddl_wdrr
+    duration: 690
+- sequence_id: DYN_arm_x4_spwedf_wdrr
+  name: static arm x4_spwedf_wdrr io_ext spwedf_wdrr (scx_io + resident loader)
+  io_ext_policy: X_x4_spwedf_wdrr
+  steps:
+  - name: DYN_arm_x4_spwedf_wdrr six phases
+    scenes:
+    - ib_rdyn_arm_x4_spwedf_wdrr
+    duration: 690
+- sequence_id: DYN_arm_f1_arbfb
+  name: static arm f1_arbfb io_ext arbfb (scx_io + resident loader)
+  io_ext_policy: F_f1_arbfb
+  steps:
+  - name: DYN_arm_f1_arbfb six phases
+    scenes:
+    - ib_rdyn_arm_f1_arbfb
+    duration: 690
+- sequence_id: DYN_arm_x5_qkyber
+  name: static arm x5_qkyber io_ext qkyber (scx_io + resident loader)
+  io_ext_policy: X_x5_qkyber
+  steps:
+  - name: DYN_arm_x5_qkyber six phases
+    scenes:
+    - ib_rdyn_arm_x5_qkyber
+    duration: 690
+- sequence_id: DYN_arm_x6_qratelimit_wdrr
+  name: static arm x6_qratelimit_wdrr io_ext qratelimit (scx_io + resident loader)
+  io_ext_policy: X_x6_qratelimit_wdrr
+  steps:
+  - name: DYN_arm_x6_qratelimit_wdrr six phases
+    scenes:
+    - ib_rdyn_arm_x6_qratelimit_wdrr
+    duration: 690
+- sequence_id: DYN_arm_x7_fifo_arbiocost
+  name: static arm x7_fifo_arbiocost io_ext fifo_arbiocost (scx_io + resident loader)
+  io_ext_policy: X_x7_fifo_arbiocost
+  steps:
+  - name: DYN_arm_x7_fifo_arbiocost six phases
+    scenes:
+    - ib_rdyn_arm_x7_fifo_arbiocost
+    duration: 690
+- sequence_id: DYN_arm_c1_io_max
+  name: static arm c1_io_max cgroup io.max (scheduler=none; b/c rbps=299/198 MiB/s frozen-contract rates,
+    d wbps=166 MiB/s floor(0.8*solo_d), a uncapped)
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_c1_io_max six phases
+    scenes:
+    - ib_rdyn_arm_c1_io_max
+    duration: 690
+- sequence_id: DYN_arm_c2_bfq_weight
+  name: static arm c2_bfq_weight cgroup io.bfq.weight (scheduler=bfq; A:C:B:D=400:200:100:100 static-arm
+    weights)
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_c2_bfq_weight six phases
+    scenes:
+    - ib_rdyn_arm_c2_bfq_weight
+    duration: 690
+- sequence_id: DYN_arm_c3_io_latency
+  name: 'static arm c3_io_latency cgroup io.latency (scheduler=none; target=ceil(2*solo p99_steady): a=1000
+    b=19000 c=24000 d=11000 us)'
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_c3_io_latency six phases
+    scenes:
+    - ib_rdyn_arm_c3_io_latency
+    duration: 690
+- sequence_id: DYN_arm_c4_io_cost
+  name: static arm c4_io_cost root io.cost + per-tenant io.weight (scheduler=none; model/qos from DYN_TENANT_IOCOST_COEF_JSON,
+    A:C:B:D=400:200:100:100 io.weight device lines)
+  io_ext_policy: native
+  steps:
+  - name: DYN_arm_c4_io_cost six phases
+    scenes:
+    - ib_rdyn_arm_c4_io_cost
+    duration: 690
+- sequence_id: DYN_arm_smoke_ab
+  name: static io_ext arm smoke (A+B, T1-T2, L=15s, arb_wdrr + per-tenant q_fifo)
+  io_ext_policy: X_arm_smoke_qfifo_wdrr
+  steps:
+  - name: DYN_arm_smoke_ab two phases
+    scenes:
+    - ib_rdyn_arm_smokeab
+    duration: 180
+default_sequence: DYN_arm_smoke_ab

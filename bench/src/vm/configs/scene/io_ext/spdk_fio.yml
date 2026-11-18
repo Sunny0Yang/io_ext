@@ -1,0 +1,60 @@
+name: "SPDK internal bdev FIO workload template"
+id: "ioext_spdk_fio_workload"
+type: "io_ext"
+class_name: "IoExtSpdkFioScene"
+module_path: "vm.scene.io_ext.spdk_fio"
+parameters:
+  output_dir: "./test_results/io_ext/spdk_fio"
+  job_name: "ioext_spdk_fio"
+  # SPDK baseline 不接管 /dev/nullb0 或 NVMe PCI 设备；默认用内部 bdev_null。
+  # paper_nullblk/spdk_fio playbook 会把 src/vm/assets/spdk/spdk 复制到 VM 同路径，
+  # 并构建 build/fio/spdk_bdev 与同源 FIO binary。scene 默认拒绝退回 /usr/bin/fio，
+  # 避免 spdk_bdev plugin 与系统 FIO ABI 不匹配导致 SIGSEGV。
+  # 可通过 SPDK_HOME、fio_ioengine 或 fio_binary 显式覆盖；未显式覆盖时优先尝试
+  # mk/config.mk 的 CONFIG_FIO_SOURCE_DIR/fio，再尝试下面的已知候选。
+  spdk:
+    require_spdk: true
+    use_sudo: true
+    require_hugepages: true
+    setup_hugepages: true
+    allow_system_fio_fallback: false
+    # virtme-ng VM 通常只有约 4GiB 内存，1024MiB hugepages 足够 bdev_null smoke；
+    # 如果跑到 64 jobs/iodepth=64，请优先降低每线程 iobuf cache（见 task YAML 的
+    # accel_options / bdev_options），不要在 4GiB VM 内盲目增大 large_pool_count。
+    hugemem_mb: 1024
+    setup_timeout_sec: 90
+    spdk_mem_mb: 512
+    bdev_type: "null"
+    bdev_name: "Null0"
+    num_blocks: 268435456
+    block_size: 4096
+    # 可选：直接写入 SPDK JSON config 的 iobuf_set_options / accel_set_options /
+    # bdev_set_options，用于高并发 bdev_null/bdev_malloc 资源池调参。
+    iobuf_options: {}
+    accel_options: {}
+    bdev_options: {}
+    home_candidates:
+      - "$SPDK_HOME"
+      - "/home/anon/ioext-bench/src/vm/assets/spdk/spdk"
+    fio_binary_candidates:
+      # 如果 SPDK checkout 的 mk/config.mk 仍指向 /usr/src/fio 或不是用 --with-fio 生成，
+      # 优先使用本地已经验证可与当前 spdk_bdev plugin 匹配的 fio。
+      - "/opt/ioext/temp/fio/fio"
+      - "/home/anon/ioext-bench/temp/fio/fio"
+  # 可选：把 Tencent CSV 转成 fio version 2 iolog，再通过 spdk_bdev replay。
+  # 这是真实 SPDK I/O，但语义是 block-level FIO replay approximation；不要与
+  # trace_replay.c 的 kernel block exact replay 混为同一 baseline。
+  trace_iolog: {}
+  fio_global:
+    direct: 1
+    bs: "4k"
+    rw: "randread"
+    iodepth: 64
+    numjobs: 1
+    runtime_sec: 10
+    time_based: true
+    group_reporting: true
+    clat_percentiles: true
+    percentile_list: "99:99.9"
+  concurrency_levels: [1]
+  cooldown_sec: 1

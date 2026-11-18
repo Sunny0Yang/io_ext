@@ -1,0 +1,16 @@
+{
+  "name": "seq_5",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "q_none bypass: FIFO passthrough, complete==arrival order",
+  "expected_complete_order": [
+    {"sector": 0, "op": "read", "nr_sectors": 8},
+    {"sector": 8, "op": "read", "nr_sectors": 8},
+    {"sector": 16, "op": "read", "nr_sectors": 8},
+    {"sector": 24, "op": "read", "nr_sectors": 8},
+    {"sector": 32, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "q_none IOSCHED_BYPASS_MODE_DIRECT: insert always rejects, kernel handles directly. Complete order == arrival order == ascending (since trace is ascending)."
+}

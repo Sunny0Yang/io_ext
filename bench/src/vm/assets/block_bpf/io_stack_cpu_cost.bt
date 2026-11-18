@@ -1,0 +1,127 @@
+#!/usr/bin/env bpftrace
+/*
+ * IO 栈（块层）上「软件路径」耗时近似：从 block_io_start 到 block_rq_issue。
+ *
+ * 含义：IO 进入块层 start 事件到 request 下发给设备之间的时间；包含调度准备和 dispatch 前开销，
+ * 不全是纯 CPU，但比 issue→complete（多为设备等待）更接近「内核侧处理开销」。
+ *
+ * 改进（v3）：
+ *   1. stats() 为核心数值来源（count/avg/total），无上限、无溢出，任何 QD 下均可靠；
+ *   2. pow2 直方图保留用于可视化分布形态（log scale 天然覆盖 ns~ms）；
+ *   3. 移除线性直方图 lhist——高并发路径（q_noop/accept_noop QD≥64）延迟远超 2μs 上限，
+ *      93%+ 样本落入 [2000,...) 溢出桶，完全丧失分辨率；
+ *   4. 按 RWBS 拆分 READ/WRITE 路径延迟，揭示调度器对不同 IO 类型的处理差异；
+ *   5. 长尾堆栈捕获阈值从 100μs 提升至 500μs——QD128 时 avg≈556μs，
+ *      旧阈值会把几乎全部样本都标记为"慢路径"而淹没真正异常的极端值。
+ *
+ * 若需要指令周期级 on-CPU 分析，请配合：perf record -e cycles -g -p <pid>
+ *
+ *   sudo bpftrace /path/to/io_stack_cpu_cost.bt
+ */
+
+BEGIN
+{
+  printf("IO_STACK_CPU_COST_START\n");
+  printf("block layer software path: io_start -> issue (hist=ns, stats=ns, split=RWBS)\n");
+  printf("tracepoints=block_io_start,block_rq_issue,block_rq_complete units=count,ns,us\n");
+  printf("slow_stack_threshold_ns=500000\n\n");
+}
+
+tracepoint:block:block_io_start
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @isc_start_event_count = count();
+  @io_start_nsec[$d, $s, $n] = nsecs;
+  @io_latest_nsec[$d] = nsecs;
+
+  /*
+   * 记录 IO 类型：rwbs 是可空字符串（如 "R"、"W"、"WS"、"F" 等），
+   * 取首字节做快速分类：R=READ, W=WRITE, 其他归为 OTHER。
+   */
+  $rwbs0 = args->rwbs[0];
+  if ($rwbs0 == 82 /* 'R' */) {
+    @io_start_rw[$d, $s, $n] = 1;
+  } else if ($rwbs0 == 87 /* 'W' */) {
+    @io_start_rw[$d, $s, $n] = 2;
+  } else {
+    @io_start_rw[$d, $s, $n] = 3;
+  }
+}
+
+tracepoint:block:block_rq_issue
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @isc_issue_count = count();
+  if (@io_start_nsec[$d, $s, $n]) {
+    $qd_ns = nsecs - @io_start_nsec[$d, $s, $n];
+    @isc_exact_match_count = count();
+    @isc_path_ns = stats($qd_ns);
+    @isc_path_ns_hist = hist($qd_ns);
+    $rw = @io_start_rw[$d, $s, $n];
+    if ($rw == 1) {
+      @isc_read_path_ns = stats($qd_ns);
+      @isc_read_count = count();
+    } else if ($rw == 2) {
+      @isc_write_path_ns = stats($qd_ns);
+      @isc_write_count = count();
+    } else {
+      @isc_other_path_ns = stats($qd_ns);
+      @isc_other_count = count();
+    }
+    if ($qd_ns > 500000) {
+      @isc_slow_path_stacks[kstack] = count();
+    }
+  } else if (@io_latest_nsec[$d]) {
+    $qd_ns = nsecs - @io_latest_nsec[$d];
+    @isc_approx_match_count = count();
+    @isc_path_ns = stats($qd_ns);
+    @isc_path_ns_hist = hist($qd_ns);
+  }
+  delete(@io_start_nsec[$d, $s, $n]);
+  delete(@io_latest_nsec[$d]);
+  delete(@io_start_rw[$d, $s, $n]);
+}
+
+tracepoint:block:block_rq_complete
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  if (@io_start_nsec[$d, $s, $n]) {
+    delete(@io_start_nsec[$d, $s, $n]);
+  }
+  if (@io_latest_nsec[$d]) {
+    delete(@io_latest_nsec[$d]);
+  }
+  if (@io_start_rw[$d, $s, $n]) {
+    delete(@io_start_rw[$d, $s, $n]);
+  }
+}
+
+END
+{
+  printf("IO_STACK_CPU_COST_SUMMARY_BEGIN\n");
+  printf("\n--- io_start -> issue (block layer software path) ---\n");
+  print(@isc_start_event_count);
+  print(@isc_issue_count);
+  print(@isc_exact_match_count);
+  print(@isc_approx_match_count);
+  print(@isc_path_ns);
+  printf("\n--- ns pow2 histogram ---\n");
+  print(@isc_path_ns_hist);
+  printf("\n--- per-IO-type counts ---\n");
+  print(@isc_read_count);
+  print(@isc_write_count);
+  print(@isc_other_count);
+  printf("\n--- per-IO-type stats (ns) ---\n");
+  print(@isc_read_path_ns);
+  print(@isc_write_path_ns);
+  print(@isc_other_path_ns);
+  printf("\n--- slow path stacks (latency > 500us) ---\n");
+  print(@isc_slow_path_stacks);
+  printf("IO_STACK_CPU_COST_SUMMARY_END\n");
+}

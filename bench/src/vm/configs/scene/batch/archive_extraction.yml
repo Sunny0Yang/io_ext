@@ -1,0 +1,10 @@
+name: "7Zip基准测试场景"  
+id: "archive_extraction"
+type: "batch"
+class_name: "ArchiveExtractionScene"
+module_path: "src.vm.scene.batch.archive_extraction"
+parameters:
+  thread_count: null  # 默认使用所有CPU核心
+  dict_sizes: null  # 默认使用7z的默认配置
+  output_dir: "./test_results"
+  iteration: 6  # 默认运行6次测试

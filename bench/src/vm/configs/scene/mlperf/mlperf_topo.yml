@@ -1,0 +1,26 @@
+name: "MLPerfStorage 真实负载拓扑场景 (fg unet3d + bg llama_ckpt in cgroups)"
+id: "mlperf_topo"
+type: "mlperf"
+class_name: "MlperfTopoScene"
+module_path: "vm.scene.mlperf.mlperf_topo"
+parameters:
+  target_device: "sdb"
+  output_dir: "./test_results/mlperf/topo"
+  cell_id: "cell0"
+  fg_cmd: ""
+  bg_cmd: ""
+  bg_enabled: false
+  use_cgroup_split: false
+  cgroup_setup_paths: []
+  fg_cgroup_path: "/sys/fs/cgroup"
+  bg_cgroup_path: null
+  io_stat_labels:
+    root: "/sys/fs/cgroup/io.stat"
+  fg_timeout_sec: 1800
+  bg_lead_sec: 0
+  bg_terminate_grace_sec: 30
+  io_stat_settle_sec: 15
+  elevator_tunables: {}
+  dlio_fg_run_dir: "/home/anon/mlps_results/cell0"
+  dlio_bg_run_dir: "/home/anon/mlps_results/cell0/ckpt"
+  duration: 2700

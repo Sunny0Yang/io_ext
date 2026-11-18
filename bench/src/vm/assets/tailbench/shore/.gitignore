@@ -1,0 +1,7 @@
+shore_kits_integrated
+db-tpcc-1
+tailbench.inputs/
+tailbench.inputs.tgz
+tailbench-v*.tgz
+build/
+*.o

@@ -1,0 +1,5 @@
+{
+  "schema": "io_ext_artifact/dynamic_tenant/1",
+  "contents": "scripts-and-docs-only",
+  "note": "Design-ref plotting scripts only. Figures and per-run data are not shipped; regenerate via experiments/dyn_tenant_bm/."
+}

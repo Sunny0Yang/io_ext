@@ -1,0 +1,160 @@
+benchmark_name: isol_bench S-decisive strict wdrr cg2 bm
+description: 'S-decisive probe (post-ioext4v2): STRICT arb_wdrr on the original cg2
+  wedge shape. Pass = machine lives (0001 breaker) AND -W 100/200 shares shape ~1:2.'
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      output_dir: ./test_results/isol_bench/d2d4_bm/l1/system_metric
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/d2d4_bm/l1/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  iox_arbnoo_cg2:
+    name: L1 ALLOW_FALLBACK arb_wdrr probe (patch 0004) (trivial arbiter + marker
+      gate, D2 cg2 shape)
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/ioext/d2d4_bm/loaders_tune2/bundle/loader_arb_wdrr
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: l1_w1
+      name_template: q_fifo_l1w1
+      path: /opt/ioext/d2d4_bm/loaders_tune2/bundle/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: l1_w2
+      name_template: q_fifo_l1w2
+      path: /opt/ioext/d2d4_bm/loaders_tune2/bundle/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+tenant_groups:
+  l1_w1:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_l1_w1
+    collapsed_scene_id: ib_l1_w1_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /opt/ioext/d2d4_regions/region.bin
+        scheduler: scx_io
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/d2d4_bm/l1/iox/w1
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 30
+          ramp_time: 0
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_l1_w1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  l1_w2:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_l1_w2
+    collapsed_scene_id: ib_l1_w2_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /opt/ioext/d2d4_regions/region.bin
+        scheduler: scx_io
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/d2d4_bm/l1/iox/w2
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 30
+          ramp_time: 0
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_l1_w2
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: L2aS_bm_wdrr_strict_cg2
+  name: 'S-decisive: STRICT arb_wdrr on the cg2 death shape (0001 breaker armed)'
+  io_ext_policy: iox_arbnoo_cg2
+  steps:
+  - name: ALLOW_FALLBACK arb_wdrr probe (patch 0004) cg2
+    tenant_groups:
+    - l1_w1
+    - l1_w2
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+default_sequence: L2aS_bm_wdrr_strict_cg2
+fail_fast_on_scene_error: true

@@ -1,0 +1,114 @@
+#!/usr/bin/env bpftrace
+/*
+ * Phase 4.4 block multi-queue latency smoke monitor.
+ *
+ * Stable VM evidence path:
+ * - block_rq_issue and block_rq_complete fire for the keepalive writes;
+ * - block_rq_insert may be silent in virtme-ng/NVMe, so queue/e2e metrics are
+ *   optional and the required evidence is service latency only.
+ *
+ * Primary service metric: issue -> complete.
+ * Optional queue metric  : insert -> issue.
+ * Optional e2e metric    : insert -> complete.
+ *
+ * Map sizing: bpftrace defaults to BPFTRACE_MAX_MAP_KEYS=4096 per map. Under
+ * high NVMe IOPS + QD, @bml_issue_ns/@bml_insert_ns (dev,sector,nr) overflow,
+ * causing "Map full" and broken issue/complete pairing. Use explicit hash caps.
+ */
+
+let @bml_insert_ns = hash(1048576);
+let @bml_issue_ns = hash(1048576);
+let @bml_issue_ns_by_dev = hash(1024);
+
+BEGIN
+{
+  printf("BLOCK_MQ_LATENCY_START\n");
+  printf("tracepoints=block_rq_insert,block_rq_issue,block_rq_complete units=count,ns,us\n");
+}
+
+tracepoint:block:block_rq_insert
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @bml_insert_count = count();
+  @bml_insert_ns[$d, $s, $n] = nsecs;
+}
+
+tracepoint:block:block_rq_issue
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @bml_issue_count = count();
+  @bml_issue_ns[$d, $s, $n] = nsecs;
+  @bml_issue_ns_by_dev[$d] = nsecs;
+
+  if (@bml_insert_ns[$d, $s, $n]) {
+    $queue_ns = nsecs - @bml_insert_ns[$d, $s, $n];
+    @bml_queue_ns = stats($queue_ns);
+    @bml_queue_us = hist($queue_ns / 1000);
+    @bml_queue_sample_count = count();
+  }
+}
+
+tracepoint:block:block_rq_complete
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  $now = nsecs;
+  @bml_complete_count = count();
+
+  if (@bml_issue_ns[$d, $s, $n]) {
+    $service_ns = $now - @bml_issue_ns[$d, $s, $n];
+    @bml_service_ns = stats($service_ns);
+    @bml_service_us = hist($service_ns / 1000);
+    @bml_service_sample_count = count();
+    @bml_exact_service_count = count();
+    $deleted = delete(@bml_issue_ns[$d, $s, $n]);
+    if (@bml_issue_ns_by_dev[$d]) {
+      $deleted = delete(@bml_issue_ns_by_dev[$d]);
+    }
+  } else {
+    if (@bml_issue_ns_by_dev[$d]) {
+      $fallback_ns = $now - @bml_issue_ns_by_dev[$d];
+      @bml_service_ns = stats($fallback_ns);
+      @bml_service_us = hist($fallback_ns / 1000);
+      @bml_service_sample_count = count();
+      @bml_approx_service_count = count();
+      $deleted = delete(@bml_issue_ns_by_dev[$d]);
+    }
+  }
+
+  if (@bml_insert_ns[$d, $s, $n]) {
+    $e2e_ns = $now - @bml_insert_ns[$d, $s, $n];
+    @bml_e2e_ns = stats($e2e_ns);
+    @bml_e2e_us = hist($e2e_ns / 1000);
+    @bml_e2e_sample_count = count();
+    $deleted = delete(@bml_insert_ns[$d, $s, $n]);
+  }
+}
+
+END
+{
+  printf("BLOCK_MQ_LATENCY_SUMMARY_BEGIN\n");
+  print(@bml_insert_count);
+  print(@bml_issue_count);
+  print(@bml_complete_count);
+  print(@bml_queue_sample_count);
+  print(@bml_exact_service_count);
+  print(@bml_approx_service_count);
+  print(@bml_service_sample_count);
+  print(@bml_e2e_sample_count);
+  print(@bml_queue_ns);
+  print(@bml_queue_us);
+  print(@bml_service_ns);
+  print(@bml_service_us);
+  print(@bml_e2e_ns);
+  print(@bml_e2e_us);
+  printf("BLOCK_MQ_LATENCY_SUMMARY_END\n");
+  clear(@bml_insert_ns);
+  clear(@bml_issue_ns);
+  clear(@bml_issue_ns_by_dev);
+}

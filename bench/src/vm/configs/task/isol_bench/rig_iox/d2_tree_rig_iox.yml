@@ -1,0 +1,1302 @@
+benchmark_name: isol_bench rig D2 iox cgroup tree topology (kvmhost/sdb)
+description: "Rig D2 iox T2: saturated weighted cg=8 under g1/g2 subtrees, arb_wdrr + q_wedf + q_fifo flavors x {treeleaf,treesub} policy mounts (design \xA75; q_wedf/q_fifo are default-weight B-family\
+  \ controls, ruler-exempt)."
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_iox/d2t/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_iox/d2t/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_iox/d2t/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_iox/d2t/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/rig_iox/d2t/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  iox_arb_wdrr_treeleaf:
+    name: rig iox arb_wdrr + fifo per-leaf treeleaf
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: &id001
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2t_w1_treeleaf
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: d2t_w2_treeleaf
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+    - tenant_group: d2t_w3_treeleaf
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '300'
+    - tenant_group: d2t_w4_treeleaf
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '400'
+    - tenant_group: d2t_w5_treeleaf
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '500'
+    - tenant_group: d2t_w6_treeleaf
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '600'
+    - tenant_group: d2t_w7_treeleaf
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '700'
+    - tenant_group: d2t_w8_treeleaf
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '800'
+  iox_arb_wdrr_treesub:
+    name: rig iox arb_wdrr + fifo per-subtree treesub
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+      cgroup_policies:
+      - name: q_fifo_g1
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g1
+        - -W
+        - '1000'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g1
+      - name: q_fifo_g2
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g2
+        - -W
+        - '2600'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g2
+  iox_q_wedf_treeleaf:
+    name: rig iox q_wedf per-leaf treeleaf
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: d2t_tenants_q_wedf_treeleaf
+      name_template: q_wedf_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_wedf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+  iox_q_wedf_treesub:
+    name: rig iox q_wedf per-subtree treesub
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      cgroup_policies:
+      - name: q_wedf_g1
+        path: /opt/io-ext/userspace/loader_q_wedf
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1
+      - name: q_wedf_g2
+        path: /opt/io-ext/userspace/loader_q_wedf
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g2
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g2
+  iox_q_fifo_treeleaf:
+    name: rig iox q_fifo per-leaf treeleaf
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: d2t_tenants_q_fifo_treeleaf
+      name_template: q_fifo_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+  iox_q_fifo_treesub:
+    name: rig iox q_fifo per-subtree treesub
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      cgroup_policies:
+      - name: q_fifo_g1
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1
+      - name: q_fifo_g2
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g2
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g2
+tenant_groups:
+  d2t_w1_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w1
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w1_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w1
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g1/t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w2_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w2
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w2_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w2
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g1/t2
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w3_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w3
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w3_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w3
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g1/t3
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w4_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w4
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w4
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g1/t4
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w5_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w5
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w5_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w5
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g2/t5
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w6_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w6
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w6_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w6
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g2/t6
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w7_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w7
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w7_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w7
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g2/t7
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w8_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treeleaf_w8
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treeleaf_w8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treeleaf_w8
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treeleaf/g2/t8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w1_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w1
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w1_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w1
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g1/t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w2_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w2
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w2_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w2
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g1/t2
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w3_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w3
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w3_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w3
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g1/t3
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w4_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w4
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w4
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g1/t4
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w5_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w5
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w5_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w5
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g2/t5
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w6_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w6
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w6_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w6
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g2/t6
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w7_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w7
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w7_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w7
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g2/t7
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_w8_treesub:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_arb_wdrr_treesub_w8
+    collapsed_scene_id: ib_rig_d2t_arb_wdrr_treesub_w8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/arb_wdrr_treesub_w8
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_arb_wdrr_treesub/g2/t8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_tenants_q_wedf_treeleaf:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_q_wedf_treeleaf_cg{idx1}
+    collapsed_scene_id: ib_rig_d2t_q_wedf_treeleaf_subjob
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g1/t1
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g1/t2
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g1/t3
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g1/t4
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g2/t5
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g2/t6
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g2/t7
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g2/t8
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/q_wedf_treeleaf
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treeleaf/g1/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_tenants_q_wedf_treesub:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_q_wedf_treesub_cg{idx1}
+    collapsed_scene_id: ib_rig_d2t_q_wedf_treesub_subjob
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1/t1
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1/t2
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1/t3
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1/t4
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g2/t5
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g2/t6
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g2/t7
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g2/t8
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/q_wedf_treesub
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_wedf_treesub/g1/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_tenants_q_fifo_treeleaf:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_q_fifo_treeleaf_cg{idx1}
+    collapsed_scene_id: ib_rig_d2t_q_fifo_treeleaf_subjob
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g1/t1
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g1/t2
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g1/t3
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g1/t4
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g2/t5
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g2/t6
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g2/t7
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g2/t8
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/q_fifo_treeleaf
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treeleaf/g1/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2t_tenants_q_fifo_treesub:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2t_q_fifo_treesub_cg{idx1}
+    collapsed_scene_id: ib_rig_d2t_q_fifo_treesub_subjob
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1/t1
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1/t2
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1/t3
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1/t4
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g2/t5
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g2/t6
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g2/t7
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g2/t8
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2t/q_fifo_treesub
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2t_q_fifo_treesub/g1/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: D2_saturated_weighted_iox_arb_wdrr_treeleaf_cg8_iter1
+  name: D2 saturated weighted iox arb_wdrr treeleaf cg=8
+  io_ext_policy: iox_arb_wdrr_treeleaf
+  steps:
+  - name: saturated weighted cg=8 iox arb_wdrr treeleaf
+    tenant_groups:
+    - d2t_w1_treeleaf
+    - d2t_w2_treeleaf
+    - d2t_w3_treeleaf
+    - d2t_w4_treeleaf
+    - d2t_w5_treeleaf
+    - d2t_w6_treeleaf
+    - d2t_w7_treeleaf
+    - d2t_w8_treeleaf
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_arb_wdrr_treesub_cg8_iter1
+  name: D2 saturated weighted iox arb_wdrr treesub cg=8
+  io_ext_policy: iox_arb_wdrr_treesub
+  steps:
+  - name: saturated weighted cg=8 iox arb_wdrr treesub
+    tenant_groups:
+    - d2t_w1_treesub
+    - d2t_w2_treesub
+    - d2t_w3_treesub
+    - d2t_w4_treesub
+    - d2t_w5_treesub
+    - d2t_w6_treesub
+    - d2t_w7_treesub
+    - d2t_w8_treesub
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_q_wedf_treeleaf_cg8_iter1
+  name: D2 saturated weighted iox q_wedf treeleaf cg=8
+  io_ext_policy: iox_q_wedf_treeleaf
+  steps:
+  - name: saturated weighted cg=8 iox q_wedf treeleaf
+    tenant_groups:
+    - d2t_tenants_q_wedf_treeleaf
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_iox_q_wedf_treesub_cg8_iter1
+  name: D2 saturated weighted iox q_wedf treesub cg=8
+  io_ext_policy: iox_q_wedf_treesub
+  steps:
+  - name: saturated weighted cg=8 iox q_wedf treesub
+    tenant_groups:
+    - d2t_tenants_q_wedf_treesub
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_iox_q_fifo_treeleaf_cg8_iter1
+  name: D2 saturated weighted iox q_fifo treeleaf cg=8
+  io_ext_policy: iox_q_fifo_treeleaf
+  steps:
+  - name: saturated weighted cg=8 iox q_fifo treeleaf
+    tenant_groups:
+    - d2t_tenants_q_fifo_treeleaf
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_iox_q_fifo_treesub_cg8_iter1
+  name: D2 saturated weighted iox q_fifo treesub cg=8
+  io_ext_policy: iox_q_fifo_treesub
+  steps:
+  - name: saturated weighted cg=8 iox q_fifo treesub
+    tenant_groups:
+    - d2t_tenants_q_fifo_treesub
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+default_sequence: D2_saturated_weighted_iox_arb_wdrr_treeleaf_cg8_iter1
+fail_fast_on_scene_error: true

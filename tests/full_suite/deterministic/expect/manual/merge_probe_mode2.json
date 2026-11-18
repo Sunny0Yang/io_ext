@@ -1,0 +1,10 @@
+{
+  "name": "merge_probe_mode2_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 1,
+    "complete_count_min": 1
+  },
+  "notes": "mode=2 ADJACENT_SAME_OP: merge allowed for adjacent same-op sectors; bpftool merge_stats should show bio_merge_true > 0"
+}

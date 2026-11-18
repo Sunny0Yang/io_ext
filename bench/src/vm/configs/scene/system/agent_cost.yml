@@ -1,0 +1,16 @@
+name: "智能体开销监测场景"
+id: "agent_cost"
+type: "system"
+class_name: "AgentCostScene"
+module_path: "src.vm.scene.system.agent_cost"
+parameters:
+  # 系统监控配置
+  duration: 240  # 监控持续时间(秒)
+  overhead_interval: 1  # 开销数据收集间隔（秒）
+  
+  # 权限管理配置
+  privilege:
+    method: "sudo_askpass"  # 权限获取方法: sudo_askpass, sudo_cache, sudo_nopasswd
+    askpass_script: ""  # 留空将自动创建临时脚本
+    env_var: "SUDO_PASSWORD"  # 密码环境变量名
+

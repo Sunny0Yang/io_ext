@@ -1,0 +1,27 @@
+{
+  "name": "kyber_rw_domains_8",
+  "tier": 2,
+  "match": "partial",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "q_kyber 4-domain round-robin (ioext_policy_shared.h iosched_kyber_dispatch L1590-1638): cur_domain starts INVALID -> scan from READ; READ batch limit 16 (L33) drains all 5 reads in arrival FIFO, then WRITE batch 8 drains 3 writes in arrival FIFO. ISSUE = 8320,8384,8448,8512,8576,8832,8896,8960. Verified by tests/io/q_kyber_model.py test_k2. Tighten to match=exact after >=2 stable VM runs.",
+  "expected_dispatch_order": [
+    {"sector": 8320, "op": "read", "nr_sectors": 8},
+    {"sector": 8384, "op": "read", "nr_sectors": 8},
+    {"sector": 8448, "op": "read", "nr_sectors": 8},
+    {"sector": 8512, "op": "read", "nr_sectors": 8},
+    {"sector": 8576, "op": "read", "nr_sectors": 8},
+    {"sector": 8832, "op": "write", "nr_sectors": 8},
+    {"sector": 8896, "op": "write", "nr_sectors": 8},
+    {"sector": 8960, "op": "write", "nr_sectors": 8}
+  ],
+  "partial_constraints": [
+    {"lane": "read", "sectors_monotonic": true, "all_sectors_present": [8320, 8384, 8448, 8512, 8576]},
+    {"lane": "write", "sectors_monotonic": true, "all_sectors_present": [8832, 8896, 8960]},
+    {"all_sectors_in_lane_before_other_lane": {"first": "read", "second": "write"}}
+  ],
+  "expected_merge": false,
+  "invariants": {
+    "complete_count_min": 8,
+    "merge_count_max": 0
+  },
+  "notes": "sectors_monotonic (ascending) equals arrival order within each lane -> asserts per-domain FIFO; all_sectors_in_lane_before_other_lane asserts READ domain round-robin priority over WRITE regardless of interleaved arrival. Loader args: --merge-enable=0 --read-target-ns 100000000000000 --write-target-ns 100000000000000 (huge targets so depth_limit only ever grows, never shrinks mid-burst)."}

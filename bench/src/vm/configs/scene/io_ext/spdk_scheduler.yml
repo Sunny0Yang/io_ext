@@ -1,0 +1,45 @@
+name: "SPDK readiness 与 io-ext 调度器绑定模板"
+id: "ioext_spdk_scheduler_binding"
+type: "io_ext"
+class_name: "IoExtSpdkSchedulerBindingScene"
+module_path: "vm.scene.io_ext.spdk_scheduler"
+parameters:
+  # Phase 5.1：SPDK 绑定 NVMe 会让 /dev/nvme0n1 从内核块层消失；默认只做 readiness probe，
+  # 不执行 scripts/setup.sh 绑定，避免破坏 VM 中后续基准使用的临时盘。
+  target_device: "nvme0n1"
+  output_dir: "/home/anon/ioext-bench/test_results/io_ext/spdk_scheduler"
+  duration: 30
+
+  scheduler_probe:
+    # 这里验证内核块设备仍可绑定到 io-ext 调度器。若将来真的切到 SPDK vfio/uio，
+    # 这个 scheduler 文件会消失，这是 SPDK 绕过内核块层的预期行为。
+    target_scheduler: "scx_io"
+    restore_original: true
+    require_target_available: true
+    require_binding: true
+
+  spdk:
+    # 按顺序探测 SPDK checkout；默认不要求存在，VM smoke 可在无 SPDK 环境下证明 safe fallback。
+    home_candidates:
+      - "$SPDK_HOME"
+      - "/home/anon/ioext-bench/src/vm/assets/spdk/spdk"
+    require_spdk: false
+    allow_device_bind: false  # 只有专用 SPDK VM 才应改 true；本 smoke 不解绑 NVMe。
+    run_setup_status: true
+    command_timeout_sec: 12
+
+  io_ext:
+    # loader_probe 验证 io-ext loader 能在 scx_io 下启动/停止；不运行真实 SPDK I/O。
+    run_loader_probe: true
+    require_loader_probe: true
+    cleanup_stale: true
+    cleanup_bpffs_pins: true
+    loader_start_gap_sec: 0.5
+    loader_settle_sec: 1.0
+    cgroup:
+      path: "/sys/fs/cgroup/ioext_spdk_scheduler_probe"
+      controllers: ["io"]
+    loaders:
+      - name: "q_mq_deadline"
+        path: "$IOEXT_WORKSPACE/userspace/loader_q_mq_deadline"
+        args: ["{cgroup_path}"]

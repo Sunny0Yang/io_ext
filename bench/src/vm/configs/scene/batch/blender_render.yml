@@ -1,0 +1,17 @@
+name: "Blender渲染场景"
+id: "blender_render"
+type: "batch" 
+class_name: "BlenderRenderScene"
+module_path: "src.vm.scene.batch.blender_render"
+parameters:
+  blend_file: "src/vm/assets/batch/blender_render/bmw27/bmw27_cpu.blend"
+  frame_start: 1
+  frame_end: 3
+  samples: 32
+  resolution_x: 1920
+  resolution_y: 1080
+  output_format: "PNG"
+  device_type: "CPU"
+  tile_size: 64
+  threads: 0
+  output_dir: "./test_results"

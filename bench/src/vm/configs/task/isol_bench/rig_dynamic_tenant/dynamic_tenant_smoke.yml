@@ -1,0 +1,63 @@
+benchmark_name: isol_bench rig dynamic tenant timeline (smoke, virtme)
+description: 'Dynamic multi-tenant timeline skeleton smoke: six-phase continuous trajectory T1={A} T2={A,B}
+  T3={A,B,C} T4={A,C,D} T5={A,D} T6={A} on one absolute monotonic clock, L=15s, native scheduler=none
+  only. DYN_smoke_ab is the shortened A+B/T1-T2 variant for the vng smoke. No io_ext policy, no scheduling
+  preference (skeleton).'
+fail_fast_on_scene_error: true
+scenes:
+  ib_rdyn_smoke:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: smoke
+      phase_length_sec: 15
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/smoke
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 240
+  ib_rdyn_smokeab:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: smokeab
+      phase_length_sec: 15
+      num_phases: 2
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/smokeab
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 180
+      tenants:
+      - a
+      - b
+      tenant_windows:
+        a:
+        - 1
+        - 2
+        b:
+        - 2
+        - 2
+test_sequences:
+- sequence_id: DYN_smoke
+  name: dynamic tenant timeline smoke (full contract, L=15s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_smoke six phases
+    scenes:
+    - ib_rdyn_smoke
+    duration: 240
+- sequence_id: DYN_smoke_ab
+  name: dynamic tenant timeline smoke (A+B, T1-T2, L=15s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_smoke_ab two phases
+    scenes:
+    - ib_rdyn_smokeab
+    duration: 180
+default_sequence: DYN_smoke_ab

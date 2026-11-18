@@ -1,0 +1,28 @@
+name: "io-ext RocksDB db_bench phase-sequence workload template"
+id: "ioext_dbbench_workload"
+type: "io_ext"
+class_name: "IoExtDbBenchScene"
+module_path: "vm.scene.io_ext.dbbench"
+parameters:
+  dbbench:
+    dbbench_bin: "/home/anon/rocksdb/db_bench"  # host 路径；vng VM 共享宿主根文件系统可直接执行
+    rocksdb_home: "/home/anon/rocksdb"          # librocksdb.so + hostlibs 软链所在目录（LD_LIBRARY_PATH）
+    db_path: "/tmp/nvme_data/ioext_dbbench/db"      # /tmp/nvme_data = 目标数据盘挂载点
+    use_direct_io: true  # --use_direct_reads + --use_direct_io_for_flush_and_compaction：前台读与后台 flush/compaction 都绕过页缓存直达块层
+    common_args:
+      num: 1000000       # 键数；1024B value 时约 1-2GB DB
+      value_size: 1024
+      key_size: 16
+      compression_type: "none"
+      bloom_bits: 10
+      cache_size: 0      # 关闭块缓存：读全部落盘，调度器才能见到前台读
+      write_buffer_size: 67108864
+  phases: []            # 顺序执行的 phase 列表；每项 {name, benchmark, duration?, settle_sec?, args: {...}}；benchmark: sleep 表示纯 settle 等待
+  system:
+    auto_format_disk: false
+    format_device: false   # 强制每次 setup 前重新 mkfs.ext4 目标数据盘
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/dbbench_rig"  # 仅记账 cgroup；不写任何 io.* 控制值
+  output_dir: "./test_results/io_ext/dbbench"
+  duration: 1800
+  drop_caches_before_run: false  # O_DIRECT 下页缓存与数据文件无关

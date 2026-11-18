@@ -1,0 +1,13 @@
+{
+  "name": "wedf_t1_counts",
+  "tier": 1,
+  "match": "invariants_only",
+  "oracle_source": "algorithm_derivation",
+  "invariants": {
+    "insert_count_eq": 8,
+    "complete_count_min": 8,
+    "issue_count_lt": 9,
+    "merge_count_max": 0
+  },
+  "notes": "Tier-1 invariant case for q_wedf on the W1 trace (wedf_sector_asc_8.json; Phase-3 re-spaced to sectors 2560+ — structurally background-free, so exact counts are now assertable; previously the cursed 0..448 range made counts bg-cushioned and min-only). insert_count_eq=8: all 8 requests enter the scheduler (INSERT events observable since the Phase-2 kernel fix). complete_count_min=8: all 8 complete in the window. issue_count_lt=9: window purity, exactly 8 dispatches. merge_count_max=0: trace_req_count(8) - issue_count <= 0 — no merge-induced or lost dispatch (sectors non-adjacent; q_wedf registers no allow_merge hook). The old 'insert_count structurally 0' note is refuted by the Phase-2 fix."
+}

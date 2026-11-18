@@ -1,0 +1,328 @@
+{
+  "schema": "dynamic_tenant_frozen_manifest/1",
+  "frozen_at_utc": "2026-11-06T09:01:38.228664+00:00",
+  "experiment": "dynamic multi-tenant reconfiguration (IoExtTimelineScene)",
+  "frozen_parameters": {
+    "formal_phase_length_sec": 60.0,
+    "l_decision": {
+      "start_sec": 60,
+      "growth": 1.5,
+      "max_rounds": 2,
+      "criteria": [
+        "L1: A per-phase p99 window samples >= 100 (T4 worst case)",
+        "L3: B/C/D convergence <= L/3"
+      ],
+      "status": "decided"
+    },
+    "rate_b_mib_s": 1536,
+    "rate_c_mib_s": 1536,
+    "d_rate": "unlimited",
+    "d_pressure_fraction_of_solo": 0.7030048377480492,
+    "seed_base": 20261103,
+    "service_preference": "A > C > B = D",
+    "loss_weights": {
+      "a": 0.6,
+      "c": 0.3,
+      "low_group_bd": 0.1
+    },
+    "guardrail_thresholds": {
+      "min_completion_fraction_of_solo": 0.05,
+      "max_no_progress_sec": 5.0
+    }
+  },
+  "calibration_evidence": {
+    "solo": {
+      "a": {
+        "sequence_id": "DYN_calib_a",
+        "fio_json": "results/DYN_calib_a/step_0/ib_rdyn_calib_a/rdyn_calib_a_ta_fio.json",
+        "direction": "read",
+        "bs_bytes": 4096,
+        "iops_json": 16740.77264,
+        "bw_mib_s_json": 65.39364242553711,
+        "runtime_sec": 120.0,
+        "hist_windows_total": 119,
+        "hist_windows_steady": 110,
+        "steady_iops_mean": 16809.8,
+        "steady_mib_s_hist": 65.66328125,
+        "p50_us_all": 50.432,
+        "p99_us_all": 96.768,
+        "p50_us_steady": 50.432,
+        "p99_us_steady": 96.768,
+        "json_clat_p99_ns": 96768,
+        "convergence_sec": 10.0,
+        "warmup_sec": 1.0,
+        "total_ios": 2002029,
+        "steady_mib_s": 65.39364242553711
+      },
+      "b": {
+        "sequence_id": "DYN_calib_b",
+        "fio_json": "results/DYN_calib_b/step_0/ib_rdyn_calib_b/rdyn_calib_b_tb_fio.json",
+        "direction": "read",
+        "bs_bytes": 65536,
+        "iops_json": 52890.170897,
+        "bw_mib_s_json": 3305.6356801986694,
+        "runtime_sec": 120.0,
+        "hist_windows_total": 119,
+        "hist_windows_steady": 110,
+        "steady_iops_mean": 52945.336363636365,
+        "steady_mib_s_hist": 3309.083522727273,
+        "p50_us_all": 136.192,
+        "p99_us_all": 268.288,
+        "p50_us_steady": 136.192,
+        "p99_us_steady": 268.288,
+        "json_clat_p99_ns": 268288,
+        "convergence_sec": 10.0,
+        "warmup_sec": 1.0,
+        "total_ios": 6325876,
+        "steady_mib_s": 3305.6356801986694
+      },
+      "c": {
+        "sequence_id": "DYN_calib_c",
+        "fio_json": "results/DYN_calib_c/step_0/ib_rdyn_calib_c/rdyn_calib_c_tc_fio.json",
+        "direction": "read",
+        "bs_bytes": 65536,
+        "iops_json": 52956.992843,
+        "bw_mib_s_json": 3309.8120517730713,
+        "runtime_sec": 120.0,
+        "hist_windows_total": 119,
+        "hist_windows_steady": 110,
+        "steady_iops_mean": 53013.490909090906,
+        "steady_mib_s_hist": 3313.3431818181816,
+        "p50_us_all": 136.192,
+        "p99_us_all": 268.288,
+        "p50_us_steady": 136.192,
+        "p99_us_steady": 268.288,
+        "json_clat_p99_ns": 268288,
+        "convergence_sec": 10.0,
+        "warmup_sec": 1.0,
+        "total_ios": 6334080,
+        "steady_mib_s": 3309.8120517730713
+      },
+      "d": {
+        "sequence_id": "DYN_calib_d",
+        "fio_json": "results/DYN_calib_d/step_0/ib_rdyn_calib_d/rdyn_calib_d_td_fio.json",
+        "direction": "write",
+        "bs_bytes": 4096,
+        "iops_json": 128457.023902,
+        "bw_mib_s_json": 501.7852487564087,
+        "runtime_sec": 120.0,
+        "hist_windows_total": 119,
+        "hist_windows_steady": 110,
+        "steady_iops_mean": 127617.57272727272,
+        "steady_mib_s_hist": 498.5061434659091,
+        "p50_us_all": 436.224,
+        "p99_us_all": 1044.48,
+        "p50_us_steady": 436.224,
+        "p99_us_steady": 1056.768,
+        "json_clat_p99_ns": 1044480,
+        "convergence_sec": 63.0,
+        "warmup_sec": 1.0,
+        "total_ios": 15365130,
+        "steady_mib_s": 501.7852487564087
+      }
+    },
+    "rates": {
+      "rule": "min(1536, round(0.8 * fresh solo 64KiB/QD8 MiB/s))  (M2 fig2 rule)",
+      "rate_b_mib_s": 1536,
+      "rate_c_mib_s": 1536,
+      "d_rate": "unlimited (frozen: no fio --rate for D)",
+      "d_pressure": {
+        "definition": "T4 coexistence achieved write bandwidth as fraction of D solo",
+        "fraction_of_solo": 0.7030048377480492,
+        "t4_write_mib_s": 352.7574573863636,
+        "solo_write_mib_s": 501.7852487564087
+      }
+    },
+    "t4_coexistence": {
+      "sequence_id": "DYN_calib_t4",
+      "phase_length_sec": 60.0,
+      "num_phases": 2,
+      "note": "C runs UNLIMITED (scene rate gap): conservative upper bound on contention",
+      "tenants": {
+        "a": {
+          "fio_json": "/opt/ioext/experiments/dyn_tenant_bm/results/DYN_calib_t4/step_0/ib_rdyn_calib_t4/rdyn_calib_t4_ta_fio.json",
+          "direction": "read",
+          "bw_mib_s_json": 3.3559350967407227,
+          "iops_json": 859.119602,
+          "steady_mib_s_hist": 3.510262784090909,
+          "steady_ios_mean": 898.6272727272727,
+          "total_ios": 102755,
+          "phases": [
+            {
+              "phase": 1,
+              "hist_windows": 59,
+              "window_samples_ios": 25072,
+              "p50_us": 1073.152,
+              "p99_us": 15400.96
+            },
+            {
+              "phase": 2,
+              "hist_windows": 60,
+              "window_samples_ios": 76638,
+              "p50_us": 358.4,
+              "p99_us": 8159.232
+            }
+          ],
+          "completion_vs_solo": 0.05367896104102168,
+          "max_no_progress_sec": 1.0,
+          "convergence_sec": null,
+          "warmup_sec": 1.0
+        },
+        "c": {
+          "fio_json": "/opt/ioext/experiments/dyn_tenant_bm/results/DYN_calib_t4/step_0/ib_rdyn_calib_t4/rdyn_calib_t4_tc_fio.json",
+          "direction": "read",
+          "bw_mib_s_json": 378.16723251342773,
+          "iops_json": 6050.675732,
+          "steady_mib_s_hist": 393.7977272727273,
+          "steady_ios_mean": 6300.763636363637,
+          "total_ios": 724399,
+          "phases": [
+            {
+              "phase": 1,
+              "hist_windows": 59,
+              "window_samples_ios": 201479,
+              "p50_us": 946.176,
+              "p99_us": 15925.248
+            },
+            {
+              "phase": 2,
+              "hist_windows": 60,
+              "window_samples_ios": 515899,
+              "p50_us": 477.184,
+              "p99_us": 8978.432
+            }
+          ],
+          "completion_vs_solo": 0.11897887889488143,
+          "max_no_progress_sec": 1.0,
+          "convergence_sec": null,
+          "warmup_sec": 1.0
+        },
+        "d": {
+          "fio_json": "/opt/ioext/experiments/dyn_tenant_bm/results/DYN_calib_t4/step_0/ib_rdyn_calib_t4/rdyn_calib_t4_td_fio.json",
+          "direction": "write",
+          "bw_mib_s_json": 360.1756343841553,
+          "iops_json": 92204.962523,
+          "steady_mib_s_hist": 352.7574573863636,
+          "steady_ios_mean": 90305.90909090909,
+          "total_ios": 11058971,
+          "phases": [
+            {
+              "phase": 1,
+              "hist_windows": 59,
+              "window_samples_ios": 6626954,
+              "p50_us": 544.768,
+              "p99_us": 1253.376
+            },
+            {
+              "phase": 2,
+              "hist_windows": 60,
+              "window_samples_ios": 4361906,
+              "p50_us": 536.576,
+              "p99_us": 13828.096
+            }
+          ],
+          "completion_vs_solo": 0.7030048377480492,
+          "max_no_progress_sec": 1.0,
+          "convergence_sec": null,
+          "warmup_sec": 1.0
+        }
+      },
+      "read_p99_degradation": {
+        "a": {
+          "solo_p99_us_steady": 96.768,
+          "t4_p99_us_phase_max": 15400.96,
+          "degradation_x": 159.15343915343914
+        },
+        "c": {
+          "solo_p99_us_steady": 268.288,
+          "t4_p99_us_phase_max": 15925.248,
+          "degradation_x": 59.358778625954194
+        }
+      },
+      "a_per_second_ios_median": 334.5,
+      "a_per_second_ios_min_steady": 281.0
+    },
+    "guardrails": {
+      "thresholds": {
+        "min_completion_fraction_of_solo": 0.05,
+        "max_no_progress_sec": 5.0
+      },
+      "t4_tenants": {
+        "a": {
+          "completion_vs_solo": 0.05367896104102168,
+          "completion_ge_5pct": true,
+          "max_no_progress_sec": 1.0,
+          "no_5s_stall": true
+        },
+        "c": {
+          "completion_vs_solo": 0.11897887889488143,
+          "completion_ge_5pct": true,
+          "max_no_progress_sec": 1.0,
+          "no_5s_stall": true
+        },
+        "d": {
+          "completion_vs_solo": 0.7030048377480492,
+          "completion_ge_5pct": true,
+          "max_no_progress_sec": 1.0,
+          "no_5s_stall": true
+        }
+      },
+      "feasible": true
+    },
+    "L_decision": {
+      "decided_L_sec": 60.0,
+      "rounds": [
+        {
+          "round": 0,
+          "L_candidate_sec": 60.0,
+          "L1_a_window_samples_scaled": [
+            25072.0,
+            76638.0
+          ],
+          "L1_pass": true,
+          "L3_warmup_worst_sec": {
+            "b": 1.0,
+            "c": 1.0,
+            "d": 1.0
+          },
+          "L3_limit_sec": 20.0,
+          "L3_pass_each": {
+            "b": true,
+            "c": true,
+            "d": true
+          },
+          "L3_pass": true,
+          "strict_band_convergence_sec_informational": {
+            "b": 10.0,
+            "c": null,
+            "d": null
+          }
+        }
+      ],
+      "status": "decided",
+      "a_per_second_resolution_note": {
+        "median_ios_per_second_in_t4": 334.5,
+        "min_steady_ios_per_second": 281.0,
+        "note": "per-second p99 resolution (>=100 IOs per 1s window) is NOT fixable by escalating L; informational only (the scored metric is the per-phase merged-histogram p99)."
+      }
+    }
+  },
+  "explicitly_unfrozen": {
+    "dynamic_arms": "switch_q placeholder; hotswitch gate FAILED (results/iox_policy_exploration/hotswitch_gate/); dynamic arms are placeholders per contract section 8",
+    "scene_score": "IoExtTimelineScene.score() still 0.0 (reported scene gap)"
+  },
+  "scene_gap_report": "frozen B/C rates are NOT applied by the scene (no fio --rate passthrough in _spawn_tenant); reported, not changed",
+  "contract_files_sha256": {
+    "src/vm/scene/io_ext/timeline.py": "620adee596061003ca04cae69c04630e5c0f7ef522290abbbc468467cedb5d33",
+    "src/vm/configs/task/isol_bench/rig_dynamic_tenant/dynamic_tenant_smoke.yml": "4cb807a96d30c7e9b9cd58d83910647dcc88ded20e1df97dfd245dcdfb165bef",
+    "src/vm/configs/task/isol_bench/rig_dynamic_tenant/dynamic_tenant_calibration.yml": "5e18ac7af2442a80017f3b16bb84c01f810e087bf8d1d8c1843f5be314c32668",
+    "src/vm/configs/task/isol_bench/rig_dynamic_tenant/dynamic_tenant_virtme.yml": "4447d4648b966c58cb5c7889a15d9e56e7aa55efca5b168364506ee0e367fb54",
+    "src/vm/configs/scene/io_ext/timeline.yml": "8dd800ef5b10643ad7e0c3f91c8dfe58682ee35924d2f2fc6e1009db04117676",
+    "scripts/gen_dynamic_tenant_yamls.py": "74d3b819fe16e33f82de4611479671a47dab014f2a582e70ceb53339d2b31e25",
+    "scripts/analyze_dynamic_tenant_calibration.py": "617e0e2c406b1ccbac8ffd98acc2e986af4141ca6ab7b04bde22b69cdd348438",
+    "scripts/run_dynamic_tenant_virtme.sh": "062d1d76f53567e5ca5046a8676b12cbc043029edb535ff45a8b7e79cb182e04",
+    "docs/plans/dynamic_tenant_reconfiguration_experiment.md": "bfb366d7eb48afee7d74fa026cb5f47b22a4b9382bec65781666900cafade681",
+    "results/dynamic_tenant_virtme/contract/calibration.json": "69cd87270b7b72f8da9d763ffed202effb3b0ada77a245426e8b07ae74f7b054"
+  },
+  "contract_doc": "docs/plans/dynamic_tenant_reconfiguration_experiment.md"
+}

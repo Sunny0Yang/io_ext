@@ -1,0 +1,244 @@
+#!/usr/bin/env bpftrace
+/*
+ * dweller.bt — queue-dwell distribution probe (Stage C MLPerfStorage track).
+ *
+ * Derived from block_io_latency_cost.bt (same event set, same key layout),
+ * re-purposed for the insert→issue dwell question:
+ *
+ *   - block_rq_insert → block_rq_issue  queue dwell (FIRST-insert anchored:
+ *     requeue re-inserts do NOT overwrite the first insert timestamp, so a
+ *     requeued request's dwell covers its full elevator residency);
+ *   - block_rq_issue → block_rq_complete service (device/host round trip);
+ *   - block_io_start (Q) → block_rq_issue software-path fallback axis. On
+ *     none / low iodepth, blk_mq_try_issue_directly issues without firing the
+ *     insert tracepoint (Tanel Poder; see block_mq_latency.bt note in this
+ *     repo). dweller discriminates that regime per issue:
+ *       insert anchor present      → dwell sample (elevator residency seen);
+ *       insert missing, Q present  → true bypass (@dw_bypass_count);
+ *       both missing               → key mismatch (merge changed the request
+ *                                    key; 4K randread makes this rare).
+ *
+ * Inflight depth (60 s window CV) is NOT probed here: bpftrace reads
+ * aggregation maps per-CPU from other probes, so in-probe scalar counters
+ * cannot track cross-CPU issue/complete balance (verified empirically
+ * 2026-10-20 — an interval-printed inflight drifted to 919K on a QD=8
+ * load). The ib_system_metric scene provides authoritative 1 Hz depth via
+ * /proc/diskstats ios_in_progress instead.
+ *
+ * Deliberate differences vs block_io_latency_cost.bt:
+ *   - no per-dev "latest start" approximate fallback (it distorts dwell);
+ *   - insert map survives issue (first-insert semantics) and is deleted only
+ *     at complete (e2e from first insert).
+ *
+ * v2 direction attribution (DESIGN_TOPO.md §4.1): every dwell/service/e2e/
+ * path_q statistic and the issue tri-state (dwell/bypass/key-mismatch) gets
+ * an ADDITIONAL per-direction entry in a separate map keyed "read"/"write"
+ * (*_dir maps). The keyless v1 maps keep their exact names/semantics
+ * (backward-compatible totals; bpftrace 0.25.0 cannot mix keyless and
+ * keyed entries in one map — verified empirically on 7.0.0-rc4: string-keyed
+ * mixes fail BPF load with -13, int-keyed mixes silently drop every keyed
+ * update with E2BIG "Map full"). Direction is read from rwbs[0] (== 87,
+ * i.e. 'W'; bpftrace 0.25.0 has no char literals) at the FIRST-CAPTURE point
+ * — insert guard for the elevator path, issue args for the direct-issue/
+ * bypass path — and carried via @dw_dir[(dev,sector,nr_sector)]
+ * (1=read, 2=write, 0=absent) so the complete side attributes first-capture
+ * direction (its rwbs field only exists on newer kernels and is used as a
+ * saturation-edge fallback); @dw_dir is deleted together with the other
+ * carry maps. Rationale: ckpt writes are buffered I/O going through cgroup
+ * writeback (flusher kworkers live in root cgroup), so task-cgroup
+ * attribution at insert would misattribute them; direction is the tenant
+ * proxy for this workload pair (READ=train / WRITE=ckpt).
+ * @dw_cgid_count[cgroup] (bpftrace `cgroup` builtin = current task's cgroup
+ * id at insert) is an informative-only reference counter, NOT an
+ * attribution basis for exactly that reason.
+ *
+ * Same map sizing rationale as block_mq_latency.bt (avoid default 4096-key cap).
+ */
+
+let @dw_start_ns = hash(1048576);
+let @dw_insert_ns = hash(1048576);
+let @dw_issue_ns = hash(1048576);
+let @dw_dir = hash(1048576);
+
+BEGIN
+{
+  printf("DWELLER_START\n");
+  printf("tracepoints=block_io_start,block_rq_insert,block_rq_issue,block_rq_complete units=count,ns,us\n");
+  printf("semantics=first_insert_dwell,requeue_dedup,qpath_fallback,bypass_tri_state\n");
+  printf("semantics_v2=direction_attrib_rwbs_first_char,cgid_ref_informative\n");
+}
+
+tracepoint:block:block_io_start
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @dw_start_count = count();
+  @dw_start_ns[$d, $s, $n] = nsecs;
+}
+
+tracepoint:block:block_rq_insert
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  @dw_insert_count = count();
+  // Informative-only task-cgroup reference (buffered writeback bio is
+  // submitted by flusher kworkers, so this is NOT an attribution basis).
+  @dw_cgid_count[cgroup] = count();
+  if (!@dw_insert_ns[$d, $s, $n]) {
+    @dw_insert_ns[$d, $s, $n] = nsecs;
+    // v2: capture direction at first insert; requeues keep the first value.
+    @dw_dir[$d, $s, $n] = (args->rwbs[0] == 87) ? 2 : 1; // 87 == 'W'
+    @dw_first_insert_count = count();
+  }
+}
+
+tracepoint:block:block_rq_issue
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  $now = nsecs;
+  @dw_issue_count = count();
+
+  // --- v2 direction: carry from first insert, else from issue args ---
+  // (direct-issue/bypass requests never hit the insert tracepoint, so for
+  // them direction comes from issue args directly; the carry write also
+  // lets the complete side attribute first-capture direction.)
+  $diri = @dw_dir[$d, $s, $n];
+  if (!$diri) {
+    $diri = (args->rwbs[0] == 87) ? 2 : 1; // 87 == 'W'
+    @dw_dir[$d, $s, $n] = $diri;
+  }
+  $dirs = "read";
+  if ($diri == 2) { $dirs = "write"; }
+  @dw_issue_count_dir[$dirs] = count();
+
+  // --- dwell (insert→issue, first insert) or bypass tri-state ---
+  if (@dw_insert_ns[$d, $s, $n]) {
+    $dwell_ns = $now - @dw_insert_ns[$d, $s, $n];
+    @dw_dwell_sample_count = count();
+    @dw_dwell_sample_count_dir[$dirs] = count();
+    @dw_dwell_ns = stats($dwell_ns);
+    @dw_dwell_ns_dir[$dirs] = stats($dwell_ns);
+    @dw_dwell_us = hist($dwell_ns / 1000);
+    @dw_dwell_us_dir[$dirs] = hist($dwell_ns / 1000);
+  } else {
+    if (@dw_start_ns[$d, $s, $n]) {
+      // Q seen but never inserted → blk_mq_try_issue_directly bypass.
+      @dw_bypass_count = count();
+      @dw_bypass_count_dir[$dirs] = count();
+    } else {
+      // Neither anchor: request key changed after merge (or missed start).
+      @dw_key_mismatch_count = count();
+      @dw_key_mismatch_count_dir[$dirs] = count();
+    }
+  }
+
+  // --- Q→issue fallback axis (software path incl. direct-issue) ---
+  if (@dw_start_ns[$d, $s, $n]) {
+    $path_q_ns = $now - @dw_start_ns[$d, $s, $n];
+    @dw_path_q_sample_count = count();
+    @dw_path_q_sample_count_dir[$dirs] = count();
+    @dw_path_q_ns = stats($path_q_ns);
+    @dw_path_q_ns_dir[$dirs] = stats($path_q_ns);
+    @dw_path_q_us = hist($path_q_ns / 1000);
+    @dw_path_q_us_dir[$dirs] = hist($path_q_ns / 1000);
+    delete(@dw_start_ns[$d, $s, $n]);
+  }
+
+  // --- service anchor ---
+  @dw_issue_ns[$d, $s, $n] = $now;
+}
+
+tracepoint:block:block_rq_complete
+{
+  $d = args->dev;
+  $s = args->sector;
+  $n = args->nr_sector;
+  $now = nsecs;
+  @dw_complete_count = count();
+
+  // --- v2 direction from carry; kernel 7.0 block_rq_complete also has
+  // rwbs — used as fallback when the carry entry was lost (map saturation
+  // edge), keeping complete-side attribution exact. ---
+  $diri = @dw_dir[$d, $s, $n];
+  if (!$diri) {
+    $diri = (args->rwbs[0] == 87) ? 2 : 1; // 87 == 'W'
+  }
+  $dirs = "read";
+  if ($diri == 2) { $dirs = "write"; }
+  @dw_complete_count_dir[$dirs] = count();
+
+  if (@dw_issue_ns[$d, $s, $n]) {
+    $service_ns = $now - @dw_issue_ns[$d, $s, $n];
+    @dw_service_sample_count = count();
+    @dw_service_sample_count_dir[$dirs] = count();
+    @dw_service_ns = stats($service_ns);
+    @dw_service_ns_dir[$dirs] = stats($service_ns);
+    @dw_service_us = hist($service_ns / 1000);
+    @dw_service_us_dir[$dirs] = hist($service_ns / 1000);
+    delete(@dw_issue_ns[$d, $s, $n]);
+  }
+
+  if (@dw_insert_ns[$d, $s, $n]) {
+    $e2e_ns = $now - @dw_insert_ns[$d, $s, $n];
+    @dw_e2e_sample_count = count();
+    @dw_e2e_sample_count_dir[$dirs] = count();
+    @dw_e2e_ns = stats($e2e_ns);
+    @dw_e2e_ns_dir[$dirs] = stats($e2e_ns);
+    @dw_e2e_us = hist($e2e_ns / 1000);
+    @dw_e2e_us_dir[$dirs] = hist($e2e_ns / 1000);
+    delete(@dw_insert_ns[$d, $s, $n]);
+  }
+
+  delete(@dw_start_ns[$d, $s, $n]);
+  delete(@dw_dir[$d, $s, $n]);
+}
+
+END
+{
+  printf("DWELLER_SUMMARY_BEGIN\n");
+  print(@dw_start_count);
+  print(@dw_insert_count);
+  print(@dw_first_insert_count);
+  print(@dw_issue_count);
+  print(@dw_complete_count);
+  print(@dw_dwell_sample_count);
+  print(@dw_bypass_count);
+  print(@dw_key_mismatch_count);
+  print(@dw_path_q_sample_count);
+  print(@dw_service_sample_count);
+  print(@dw_e2e_sample_count);
+  print(@dw_dwell_ns);
+  print(@dw_dwell_us);
+  print(@dw_path_q_ns);
+  print(@dw_path_q_us);
+  print(@dw_service_ns);
+  print(@dw_service_us);
+  print(@dw_e2e_ns);
+  print(@dw_e2e_us);
+  print(@dw_issue_count_dir);
+  print(@dw_complete_count_dir);
+  print(@dw_dwell_sample_count_dir);
+  print(@dw_bypass_count_dir);
+  print(@dw_key_mismatch_count_dir);
+  print(@dw_path_q_sample_count_dir);
+  print(@dw_service_sample_count_dir);
+  print(@dw_e2e_sample_count_dir);
+  print(@dw_dwell_ns_dir);
+  print(@dw_path_q_ns_dir);
+  print(@dw_service_ns_dir);
+  print(@dw_e2e_ns_dir);
+  print(@dw_dwell_us_dir);
+  print(@dw_path_q_us_dir);
+  print(@dw_service_us_dir);
+  print(@dw_e2e_us_dir);
+  print(@dw_cgid_count);
+  printf("DWELLER_SUMMARY_END\n");
+  clear(@dw_start_ns);
+  clear(@dw_insert_ns);
+  clear(@dw_issue_ns);
+  clear(@dw_dir);
+}

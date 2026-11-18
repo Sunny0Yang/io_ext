@@ -1,0 +1,8 @@
+name: "内核编译场景"
+id: "kernel_compile"
+type: "batch"
+class_name: "KernelCompileScene"
+module_path: "src.vm.scene.batch.kernel_compile"
+parameters:
+  kernel_source_path: "/home/anon/ioext-bench/src/vm/assets/batch/kernel_compile/linux-6.14-rc7"
+  output_dir: "./test_results"

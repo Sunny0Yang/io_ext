@@ -1,0 +1,572 @@
+benchmark_name: isol_bench D2/D3 iox smoke
+description: 'Focused iox smoke: D2 weighted fairness (mixed_rw + saturated, cg=4) and D3 LC priority (1 LC + 4 BE). Hetero profiles pass arb_prio to loaders.'
+scenes: {}
+io_ext_policy_profiles:
+  iox_arb_sp_weighted:
+    name: iox D2 arb_sp + fifo per-cgroup (prio by weight)
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: &id001
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_sp
+        path: /opt/io-ext/userspace/loader_arb_sp
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '3'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '2'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '1'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '0'
+  iox_wedf_cg:
+    name: iox D2 wedf per-cgroup
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: d2_tenants
+      name_template: q_wedf_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_wedf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+  iox_hetero:
+    name: iox D3 hetero arb_mix LC sp_edf + BE fifo
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_mix
+        path: /opt/io-ext/userspace/loader_arb_mix
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d3_lc
+      name_template: q_sp_edf_lc
+      path: /opt/io-ext/userspace/loader_q_sp_edf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '0'
+    - tenant_group: d3_be
+      name_template: q_fifo_be
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '7'
+  iox_fifo:
+    name: iox D2/D3 fifo homo
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_fifo_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_hetero_wedf:
+    name: iox D3 hetero arb_mix LC sp_edf + BE wedf
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_mix
+        path: /opt/io-ext/userspace/loader_arb_mix
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d3_lc
+      name_template: q_sp_edf_lc
+      path: /opt/io-ext/userspace/loader_q_sp_edf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '0'
+    - tenant_group: d3_be
+      name_template: q_wedf_be
+      path: /opt/io-ext/userspace/loader_q_wedf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '7'
+  iox_homo_sp_edf:
+    name: iox D3 homo sp_edf
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_sp_edf_root
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+tenant_groups:
+  d2_tenants:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_d2_saturated_w_ncg4_cg{idx1}
+    collapsed_scene_id: ib_d2_saturated_w_ncg4_subjob
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 100
+            io_max:
+              rbps: 241172480
+              wbps: 241172480
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 200
+            io_max:
+              rbps: 482344960
+              wbps: 482344960
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 300
+            io_max:
+              rbps: 723517440
+              wbps: 723517440
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 400
+            io_max:
+              rbps: 964689920
+              wbps: 964689920
+              riops: max
+              wiops: max
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d2/saturated_weighted_ncg4
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 50:90:95:99:99.9:100
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d2_saturated_w_ncg4_cg{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max: &id002
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+  d2_w1:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_d2_saturated_w1_ncg4
+    collapsed_scene_id: ib_d2_saturated_w1_ncg4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d2/saturated_weighted_w1
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 50:90:95:99:99.9:100
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d2_saturated_w1_ncg4
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: 241172480
+              wbps: 241172480
+              riops: max
+              wiops: max
+  d2_w2:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_d2_saturated_w2_ncg4
+    collapsed_scene_id: ib_d2_saturated_w2_ncg4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d2/saturated_weighted_w2
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 50:90:95:99:99.9:100
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d2_saturated_w2_ncg4
+            controllers:
+            - io
+            io_weight: 200
+            io_max:
+              rbps: 482344960
+              wbps: 482344960
+              riops: max
+              wiops: max
+  d2_w3:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_d2_saturated_w3_ncg4
+    collapsed_scene_id: ib_d2_saturated_w3_ncg4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d2/saturated_weighted_w3
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 50:90:95:99:99.9:100
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d2_saturated_w3_ncg4
+            controllers:
+            - io
+            io_weight: 300
+            io_max:
+              rbps: 723517440
+              wbps: 723517440
+              riops: max
+              wiops: max
+  d2_w4:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_d2_saturated_w4_ncg4
+    collapsed_scene_id: ib_d2_saturated_w4_ncg4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d2/saturated_weighted_w4
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 50:90:95:99:99.9:100
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d2_saturated_w4_ncg4
+            controllers:
+            - io
+            io_weight: 400
+            io_max:
+              rbps: 964689920
+              wbps: 964689920
+              riops: max
+              wiops: max
+  d3_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_d3_iox_lc
+    collapsed_scene_id: ib_d3_iox_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d3/lc
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d3_iox_lc
+            controllers:
+            - io
+            io_weight: 10000
+            io_max: *id002
+  d3_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_d3_iox_be_{idx1}
+    collapsed_scene_id: ib_d3_iox_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/iox_d2_d3_smoke/d3/be
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          runtime_sec: 55
+          time_based: true
+          group_reporting: true
+          percentile_list: 50:90:95:99:99.9:100
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d3_iox_be_{idx1}
+            controllers:
+            - io
+            io_weight: 1
+            io_max: *id002
+test_sequences:
+- sequence_id: D2_saturated_weighted_cg4_iox_fifo
+  name: D2 saturated weighted cg=4 iox_fifo
+  io_ext_policy: iox_fifo
+  steps:
+  - name: contention saturated cg=4
+    tenant_groups:
+    - d2_tenants
+    tenant_count: 4
+    duration: 60
+- sequence_id: D2_saturated_weighted_cg4_iox_wedf_cg
+  name: D2 saturated weighted cg=4 iox_wedf_cg
+  io_ext_policy: iox_wedf_cg
+  steps:
+  - name: contention saturated cg=4
+    tenant_groups:
+    - d2_tenants
+    tenant_count: 4
+    duration: 60
+- sequence_id: D2_saturated_weighted_cg4_iox_arb_sp_weighted
+  name: D2 saturated weighted cg=4 iox_arb_sp_weighted
+  io_ext_policy: iox_arb_sp_weighted
+  steps:
+  - name: contention saturated cg=4
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    duration: 60
+- sequence_id: D3_lc_rread_4k_iox_fifo
+  name: D3 LC 1+4BE iox_fifo
+  io_ext_policy: iox_fifo
+  steps:
+  - name: 1 LC + 4 BE
+    tenant_groups:
+    - d3_lc
+    - d3_be
+    duration: 60
+- sequence_id: D3_lc_rread_4k_iox_homo_sp_edf
+  name: D3 LC 1+4BE iox_homo_sp_edf
+  io_ext_policy: iox_homo_sp_edf
+  steps:
+  - name: 1 LC + 4 BE
+    tenant_groups:
+    - d3_lc
+    - d3_be
+    duration: 60
+- sequence_id: D3_lc_rread_4k_iox_hetero
+  name: D3 LC 1+4BE iox_hetero
+  io_ext_policy: iox_hetero
+  steps:
+  - name: 1 LC + 4 BE
+    tenant_groups:
+    - d3_lc
+    - d3_be
+    duration: 60
+- sequence_id: D3_lc_rread_4k_iox_hetero_wedf
+  name: D3 LC 1+4BE iox_hetero_wedf
+  io_ext_policy: iox_hetero_wedf
+  steps:
+  - name: 1 LC + 4 BE
+    tenant_groups:
+    - d3_lc
+    - d3_be
+    duration: 60
+default_sequence: D3_lc_rread_4k_iox_hetero

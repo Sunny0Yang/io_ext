@@ -1,0 +1,236 @@
+# rig_m1_cache bm adaptation -- P0-1 secondary A/B arm, cache=off (direct I/O)
+# attribution pair for m1_cache_on_bm.yml. Derived 1:1 from
+# src/vm/configs/task/isol_bench/rig_m1_cache/m1_cache_ab.yml (kvmhost sdb);
+# only the bm caliber paths/device differ (see m1_cache_on_bm.yml header for
+# the full adaptation list: nvme0n1 root disk, no mkfs/mount, data dirs under
+# /opt/ioext/data/m1_cache/, skip_disk_setup: true, staging
+# bundle/asset paths, /tmp/m1_cache_bm output root).
+#
+# cache=off 口径 (identical to kvmhost):
+#   - YCSB/RocksDB: use_direct_io: true (O_DIRECT reads + flush/compaction via
+#     the generated options ini). Direct I/O hits ordinary files on the root
+#     fs (ext4) -- no raw-disk direct on bm (LEDGER 决策 1). The block cache
+#     cannot be disabled via the options file with the bundled YCSB
+#     rocksdbjni (options-file table options rejected/segfault; see
+#     ycsb_rocksdb.py guard), so the block cache stays at the same verified
+#     8 MiB LRU default in BOTH arms -- the A/B isolates the PAGE-CACHE axis
+#     with the block cache held constant (and documented) across the pair.
+#   - db_bench: use_direct_io: true + cache_size: 0 (as historical M1).
+#   - Shore: NOT in the A/B -- it is pure buffered with no cache switch; a
+#     direct-I/O pair does not exist for it. Noted here instead of a sequence.
+#
+# Sequence ids carry the _cachefix_off suffix so results can never be merged
+# with cache=on runs by accident.
+#
+# Result convention (bare-metal): runner pulls to
+#   experiments/m1m2_bm/runs/m1_campaign/<RUN_ID>/ab/<CASE>.tar.gz
+# (ab/ sublevel = the layout m1_cache_cases.py walks under --results-root).
+benchmark_name: "rig_m1_cache M1 real-app cache=off A/B (baremetal bm nvme0n1)"
+description: >-
+  Direct-I/O no-cache pairs for the M1 cache-on profile on bare-metal bm root
+  disk: YCSB workloada/c with O_DIRECT + no_block_cache, db_bench
+  readwhilewriting/readrandom with use_direct_io + cache_size 0. Shore
+  deliberately absent (buffered only, A/B meaningless).
+default_sequence: "M1CACHE_AB_YCSB_a_cachefix_off"
+fail_fast_on_scene_error: true
+
+_native_none_io_ext: &native_none_io_ext
+  cleanup_stale_when_no_specs: true
+  cleanup_bpffs_pins: true
+
+_JAVA_HOME: &java_home "/opt/ioext/staging/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+
+_common_ycsb_off: &common_ycsb_off
+  target_device: "nvme0n1"
+  scheduler: "none"
+  output_dir: "/tmp/m1_cache_bm/scene/{group_id}"
+  duration: 1100
+  # Direct I/O bypasses the page cache, so the drop is a no-op for data files;
+  # kept true for uniform discipline across the A/B.
+  drop_caches_before_run: true
+  database:
+    db_type: "rocksdb"
+    data_dir: "/opt/ioext/data/m1_cache/ycsb_db"
+    ycsb_dir: "/opt/ioext/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: true   # cache=off: page cache bypassed; block cache = 8 MiB default (constant)
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+    environment:
+      JAVA_HOME: *java_home
+      PATH: "/opt/ioext/staging/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  system:
+    mem_limit_mb: 0
+    # bm: never format/mount the root disk (see m1_cache_on_bm.yml header).
+    skip_disk_setup: true
+    auto_format_disk: false
+    format_device: false
+    cgroup_path: "/sys/fs/cgroup/m1_cache_ycsb"   # accounting only; no io.* values
+  io_ext:
+    <<: *native_none_io_ext
+
+_common_dbbench_off: &common_dbbench_off
+  target_device: "nvme0n1"
+  scheduler: "none"
+  output_dir: "/tmp/m1_cache_bm/scene/{group_id}"
+  duration: 900
+  drop_caches_before_run: true
+  dbbench:
+    dbbench_bin: "/opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench"
+    rocksdb_home: "/opt/ioext/staging/m1_cache_bm_bundle/rocksdb"
+    db_path: "/opt/ioext/data/m1_cache/dbbench_db"
+    use_direct_io: true
+    common_args:
+      num: 1000000
+      value_size: 1024
+      key_size: 16
+      compression_type: "none"
+      bloom_bits: 10
+      cache_size: 0
+      write_buffer_size: 67108864
+  system:
+    skip_disk_setup: true
+    auto_format_disk: false
+    format_device: false
+    cgroup_path: "/sys/fs/cgroup/m1_cache_dbb"   # accounting only; no io.* values
+  io_ext:
+    <<: *native_none_io_ext
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - "nvme0n1"
+      output_dir: "/tmp/m1_cache_bm/monitor/system_metric"
+
+io_ext_policy_profiles:
+  arm_m1cache_none:
+    name: "rig_m1_cache bm native none (cache=off A/B)"
+    target_device: "nvme0n1"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+
+tenant_groups:
+  m1cache_ab_ycsb_a:
+    count: 1
+    scene_id_template: "m1cache_ab_ycsb_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb_off
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "a"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  m1cache_ab_ycsb_c:
+    count: 1
+    scene_id_template: "m1cache_ab_ycsb_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb_off
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "c"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  m1cache_ab_dbb_rww:
+    count: 1
+    scene_id_template: "m1cache_ab_dbb_rww_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench_off
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle1"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readwhilewriting"
+          benchmark: "readwhilewriting"
+          duration: 150
+          args:
+            threads: 4
+            writes: 3000000
+  m1cache_ab_dbb_rr:
+    count: 1
+    scene_id_template: "m1cache_ab_dbb_rr_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench_off
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle2"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readrandom"
+          benchmark: "readrandom"
+          duration: 150
+          args:
+            threads: 4
+
+test_sequences:
+- sequence_id: "M1CACHE_AB_YCSB_a_cachefix_off"
+  name: "M1 cache=off YCSB workloada (O_DIRECT + no_block_cache, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "ycsb workloada cache=off solo none"
+    tenant_groups:
+    - "m1cache_ab_ycsb_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1CACHE_AB_YCSB_c_cachefix_off"
+  name: "M1 cache=off YCSB workloadc (O_DIRECT + no_block_cache, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "ycsb workloadc cache=off solo none"
+    tenant_groups:
+    - "m1cache_ab_ycsb_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1CACHE_AB_DBB_rww_cachefix_off"
+  name: "M1 cache=off db_bench readwhilewriting (O_DIRECT + cache_size 0, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "dbbench readwhilewriting cache=off solo none"
+    tenant_groups:
+    - "m1cache_ab_dbb_rww"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "M1CACHE_AB_DBB_rr_cachefix_off"
+  name: "M1 cache=off db_bench readrandom (O_DIRECT + cache_size 0, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "dbbench readrandom cache=off solo none"
+    tenant_groups:
+    - "m1cache_ab_dbb_rr"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 900

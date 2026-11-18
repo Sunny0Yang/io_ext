@@ -1,0 +1,5 @@
+{
+  "schema": "io_ext_artifact/d1/1",
+  "contents": "scripts-and-docs-only",
+  "note": "D1 figure-rendering scripts only. Aggregated CSVs and rendered figures are not shipped; regenerate via the D1 ladder campaign in experiments/dyn_tenant_bm/."
+}

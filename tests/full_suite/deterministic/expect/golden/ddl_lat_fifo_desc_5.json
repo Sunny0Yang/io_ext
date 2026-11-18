@@ -1,0 +1,16 @@
+{
+  "name": "ddl_lat_fifo_desc_5",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation (tests/io/q_ddl_model.py scenario s3_lat_fifo_desc_5)",
+  "oracle_ref": "q_ddl.bpf.c:114-115 all five reads classify DDL_LAT (cost 8 <= Q_DDL_SMALL_SECTOR_THRESH, bpf.c:35); single lane, pure FIFO (:125-151); fresh burst rules 1-3 cold (LAT deadline arrival+1ms, bpf.c:29, far away) -> rule 5 (:220-224) drains arrival order, lat_burst++ uncapped. Assertions on dispatch ISSUE order only.",
+  "expected_dispatch_order": [
+    {"sector": 5120, "op": "read", "nr_sectors": 8},
+    {"sector": 4608, "op": "read", "nr_sectors": 8},
+    {"sector": 3584, "op": "read", "nr_sectors": 8},
+    {"sector": 3072, "op": "read", "nr_sectors": 8},
+    {"sector": 2560, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "ARCHIVE CONTRAST with mqdd_rev_5 (traces/micro/mqdd_rev_5.json): identical shape — five 4KB reads submitted DESCENDING at sectors 2560..(4608|5120) — but the OPPOSITE expectation: mq-deadline C-LOOK issues ascending [2560,3072,3584,4096,4608] (reordering proof), q_ddl per-lane arrival FIFO issues the SUBMISSION order [5120,4608,3584,3072,2560]. Side-by-side the two goldens prove the two policies are structurally different queue disciplines. expected_merge false; q_ddl allow_merge=false always (bpf.c:340-344)."
+}

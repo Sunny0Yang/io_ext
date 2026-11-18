@@ -1,0 +1,72 @@
+{
+ "device": "nvme0n1",
+ "solo_mb_s": 3305,
+ "rate_mb_s": 2644.0,
+ "date": "2026-11-04",
+ "method": "min(0.8*solo) = 0.8*3305 = 2644 MiB/s (kvmhost method, no paper-1536 clip: 3*1536=1.39x device parallel headroom gave only 26% contention drop vs kvmhost 48%)",
+ "solo_probe": {
+  "file": "/opt/ioext/m2fig2/probe/solo_data",
+  "file_size_bytes": 34359738368,
+  "workload": "fio 64k randread QD8 direct=1 time_based (preallocated 32G file)",
+  "measured_mb_s": 3305,
+  "retention": "keep forever; this file is the calibration evidence and must NOT be deleted",
+  "source": "experiments/m1m2_bm/LEDGER.md section 5 (2026-11-04 solo probe)"
+ },
+ "rate_rule": "rate = min(1536, round(0.8 * solo 64KiB/QD8 direct randread MiB/s)); 0.8*solo = 2644 MiB/s -> truncated to the paper cap 1536 MiB/s (same truncation value as the kvmhost pipeline)",
+ "rate_mib_s": 2644.0,
+ "solo_mib_s": 3305,
+ "fio_rate_option": "1536M",
+ "io_max_mib_s": [
+  1500,
+  500,
+  500
+ ],
+ "io_max_bytes": [
+  1572864000,
+  524288000,
+  524288000
+ ],
+ "io_max_rule": "paper 1500/500/500 MiB/s scaled by rate/1536 (cap==paper cap, so unscaled)",
+ "device_major_minor_probed": "259:0",
+ "device_major_minor_note": "obtained at run time by the runner from /sys/block/nvme0n1/dev (bare-metal coreutils stat lacks %H:%L); root fs is /dev/nvme0n1p2 (259:2) on the same queue, verified empirically by the runner's io.max smoke",
+ "iocost_model": {
+  "ctrl": "user",
+  "model": "linear",
+  "rbps": 1877961028,
+  "rseqiops": 436504,
+  "rrandiops": 504812,
+  "wbps": 1895474286,
+  "wseqiops": 436118,
+  "wrandiops": 324051
+ },
+ "iocost_model_source": "measured_iocost_coef_gen_testfile_bm (decision 7: tools/cgroup/iocost_coef_gen.py --testfile-size-gb 16 on nvme0n1 root fs, 2026-11-06T08:24Z, post-RECAL-detox steady state; replaces the linear-from-solo fallback used in runs/m2fig2/m2fig2_bmr2644_20261105 g/h arms). Contract: experiments/dyn_tenant_bm/contract/iocost_coef.json",
+ "iocost_qos": {
+  "enable": true,
+  "ctrl": "user",
+  "rpct": 95.0,
+  "rlat": 20000,
+  "wpct": 95.0,
+  "wlat": 20000,
+  "min": 50.0,
+  "max": 150.0
+ },
+ "iocost_qos_source": "kernel-doc example magnitudes, identical to the kvmhost m2_fig2 pipeline (paper does not publish exact qos parameters) (task 2026-11-07: qos predeclared constants UNCHANGED for cross-figure consistency)",
+ "recalibrate": false,
+ "environment": {
+  "host": "bm",
+  "kernel": "7.3.1-ioext2",
+  "fio": "3.41",
+  "target_mode": "preallocated 32G file + fio direct=1 on root fs (LEDGER decision 1; no mkfs, no raw-device access)"
+ },
+ "note": "gh-measured variant of the r2644 calibration: only iocost_model swapped to the bm-measured iocost_coef_gen coefficients (rate/solo/io.max/qos identical to m2fig2_rate2644). Used only for the g/h re-run (RUN_ID m2fig2_bmr2644_ghmeasured_20261107); other arms untouched.",
+ "iocost_model_fallback_previous": {
+  "ctrl": "user",
+  "model": "linear",
+  "rbps": 3465543680,
+  "rseqiops": 846080,
+  "rrandiops": 52880,
+  "wbps": 3465543680,
+  "wseqiops": 846080,
+  "wrandiops": 52880
+ }
+}

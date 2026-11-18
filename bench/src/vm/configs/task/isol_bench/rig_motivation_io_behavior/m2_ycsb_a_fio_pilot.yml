@@ -1,0 +1,143 @@
+# Safety-gated M2 pilot for the authorized raw test disk /dev/sdb.
+# The runner verifies that sdb is the expected unmounted 96 GiB disk, then the
+# YCSB scene creates a fresh ext4 filesystem and mounts it at DATA_ROOT.
+benchmark_name: "motivation M2 YCSB-A + FIO pilot (native none; 8 MiB/s cap)"
+description: >-
+  Single bounded pilot on the authorized raw /dev/sdb test device. The YCSB scene
+  formats and mounts the device as ext4; foreground YCSB and O_DIRECT FIO then use
+  files on that same physical device. Native scheduler none; no cgroup io.weight,
+  io.max, io.latency, or io_ext loader. FIO rate is an offered upper bound; the
+  analysis must use achieved throughput.
+default_sequence: "M2_PILOT_NONE_FIO_8M"
+fail_fast_on_scene_error: true
+
+_native_none: &native_none
+  cleanup_stale_when_no_specs: false
+  cleanup_bpffs_pins: false
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  scheduler: "none"
+  output_dir: "/tmp/motivation_io_behavior_20261029_1793274117/pilot_scene/ycsb"
+  duration: 300
+  drop_caches_before_run: false
+  database:
+    db_type: "rocksdb"
+    # Parent directory is the mount point created by the YCSB disk setup.
+    # The runner verifies /dev/sdb identity and idleness before allowing mkfs.
+    data_dir: "/mnt/motivation_io_behavior_20261029_1793274117/ycsb_pilot"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: false
+    environment:
+      JAVA_HOME: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+  system:
+    mem_limit_mb: 0
+    # The test device is intentionally reformatted for each isolated sequence.
+    auto_format_disk: true
+    format_device: true
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/motivation_io_behavior_20261029_1793274117_ycsb"
+  io_ext:
+    <<: *native_none
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 360
+      require_samples: true
+      disk_devices:
+      - "sdb"
+      output_dir: "/tmp/motivation_io_behavior_20261029_1793274117/pilot_scene/system_metric"
+
+io_ext_policy_profiles:
+  native_none:
+    name: "motivation pilot native none (no controller values)"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: false
+      cleanup_bpffs_pins: false
+
+tenant_groups:
+  ycsb_pilot:
+    count: 1
+    scene_id_template: "m2_ycsb_a_pilot_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        ycsb_workload:
+          workload_type: "a"
+          recordcount: 100000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 180
+
+  fio_background_pilot:
+    count: 1
+    scene_id_template: "m2_fio_background_pilot_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        target_device: "sdb"
+        scheduler: "none"
+        output_dir: "/tmp/motivation_io_behavior_20261029_1793274117/pilot_scene/fio"
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 0
+        fio_global:
+          ioengine: "io_uring"
+          direct: 1
+          bs: "4k"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          runtime_sec: 110
+          time_based: true
+          group_reporting: true
+        fio_jobs:
+        - name: "m2_background_randwrite"
+          rw: "randwrite"
+          iodepth: 16
+          numjobs: 1
+          size: "1G"
+          # The observed local YCSB-A load was ~90s for 400k records. This
+          # 100k pilot should finish load before the delayed 60s FIO interval;
+          # the runner verifies actual overlap from per-scene timestamps.
+          startdelay: 50
+          runtime: 60
+          # 8 MiB/s cap; this is not an achieved-throughput datapoint.
+          rate: 8388608
+        file_name: "/mnt/motivation_io_behavior_20261029_1793274117/fio_background_pilot.dat"
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          cgroup:
+            path: "/sys/fs/cgroup/motivation_io_behavior_20261029_1793274117_fio"
+            controllers:
+            - "io"
+
+test_sequences:
+- sequence_id: "M2_PILOT_NONE_FIO_8M"
+  name: "bounded safety-gated YCSB-A + delayed FIO pilot (max 8 MiB/s)"
+  io_ext_policy: "native_none"
+  steps:
+  - name: "YCSB-A foreground plus one delayed FIO background writer"
+    tenant_groups:
+    - "ycsb_pilot"
+    - "fio_background_pilot"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 300

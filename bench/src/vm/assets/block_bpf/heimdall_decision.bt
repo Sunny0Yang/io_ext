@@ -1,0 +1,41 @@
+#!/usr/bin/env bpftrace
+/*
+ * Heimdall v2 decision timeline — periodic map snapshots + scx_io activity counters.
+ *
+ * Emits HEIMDALL_SAMPLE lines (parseable timestamps) and dumps iosched_heimdall_v2_stats
+ * via bpftool when the map is pinned.  Falls back to insert/dispatch counters only.
+ */
+
+BEGIN
+{
+  printf("HEIMDALL_DECISION_START\n");
+  printf("targets=scx_io_insert_requests,scx_io_dispatch_request,iosched_heimdall_v2_stats\n");
+  printf("sample_format=HEIMDALL_SAMPLE ts_ns=<nsecs> insert=<n> dispatch=<n> held=<n> fast=<n> last_decision=<n>\n\n");
+}
+
+kprobe:scx_io_insert_requests
+{
+  @hd_insert_count++;
+}
+
+kprobe:scx_io_dispatch_request
+{
+  @hd_dispatch_count++;
+}
+
+interval:s:5
+{
+  printf("HEIMDALL_SAMPLE ts_ns=%llu insert=%llu dispatch=%llu\n",
+    nsecs, @hd_insert_count, @hd_dispatch_count);
+  printf("HEIMDALL_MAP_DUMP_BEGIN ts_ns=%llu\n", nsecs);
+  system("sudo bpftool map dump name iosched_heimdall_v2_stats 2>/dev/null | head -40");
+  printf("HEIMDALL_MAP_DUMP_END\n");
+}
+
+END
+{
+  printf("\nHEIMDALL_DECISION_SUMMARY_BEGIN\n");
+  print(@hd_insert_count);
+  print(@hd_dispatch_count);
+  printf("HEIMDALL_DECISION_SUMMARY_END\n");
+}

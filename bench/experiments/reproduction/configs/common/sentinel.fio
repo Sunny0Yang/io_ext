@@ -1,0 +1,21 @@
+; experiments/reproduction 哨兵负载（arm 间漂移探测）
+; 口径：4k randread QD1 direct=1 10s（主会话补定：两两臂之间插 3x10s QD1 fio 哨兵）
+; 漂移判读：与 campaign 基准 /dev/shm/ioext_repro/_sentinel_ref.json 的 read iops 比
+;           较，drift > 20% 记 phase 异常但不淘汰（只记录并报告）。
+; 来源标注：[MSC] 主会话补定；randseed 冻结 [GAP-C]（C 补定，保证哨兵自身可复现）。
+
+[global]
+ioengine=libaio
+direct=1
+filename=/data/lc.bin
+randrepeat=0
+norandommap=1
+randseed=2026111410
+
+[sentinel]
+rw=randread
+bs=4k
+iodepth=1
+time_based=1
+runtime=10
+group_reporting=1

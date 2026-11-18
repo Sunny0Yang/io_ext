@@ -1,0 +1,436 @@
+benchmark_name: 'RQ5 Phase A interference probe: YCSB-B LC + db_bench BE write/compact on bm nvme0n1 (root-disk data dirs, no mkfs) (native none)'
+description: 'RQ5 real-app co-location, Phase A (contract docs/plans/rq5_realapp_coloc_experiment.md). LC = YCSB workload-B on RocksDB (O_DIRECT, recordcount 400000, maxexecutiontime 600, offered target
+  from slo.json when frozen); BE = db_bench fillrandom at fixed ladder rates 128/256/512/1024 MiB/s, a sustained-max UNCAPPED 720s fill (uncapped on real NVMe; kvmhost''s bounded anchor was SLC-specific),
+  or a rate-bounded prefill->settle->compact chain, on the same /dev/nvme0n1 with independent cgroups rq5_lc/rq5_be and data dirs /opt/ioext/data/rq5_coloc/{lc,be} (pre-created directories on
+  the root fs; the bm campaign runner resets them per case with rm+mkdir, never mkfs/mount). All sequences native none (cleanup-only io_ext). RQ5A_LC_SOLO is the A0 capacity anchor: no offered target until
+  slo.json is frozen. Phase B levels for reference: low=32 MiB/s, mid=64 MiB/s, high=128 MiB/s. Level selection (contract sec.3 rule 3) freezes LOW/MID/HIGH from the bm ladder grid 128/256/512/1024 MiB/s
+  via slo.json (build_rq5_results.py picks the bm grid from the slo.json context).'
+default_sequence: RQ5A86_LC_SOLO
+fail_fast_on_scene_error: true
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 4000
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      cgroup_paths:
+      - /sys/fs/cgroup/rq5_lc
+      - /sys/fs/cgroup/rq5_be
+      output_dir: /tmp/m1_cache_bm/monitor/system_metric
+io_ext_policy_profiles:
+  arm_none:
+    name: 'rq5 coloc none: native none baseline'
+    target_device: nvme0n1
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+tenant_groups:
+  lc_none:
+    count: 1
+    scene_id_template: rq5_lc_none_t{idx1}
+    template:
+      base_scene: scene/io_ext/ycsb_rocksdb.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1000
+        drop_caches_before_run: false
+        database:
+          db_type: rocksdb
+          data_dir: /opt/ioext/data/rq5_coloc/lc
+          ycsb_dir: /opt/ioext/src/vm/assets/ycsb/ycsb_runtime
+          use_direct_io: true
+          write_buffer_size: 67108864
+          storage_backend: kernel_block
+          environment:
+            JAVA_HOME: /opt/ioext/staging/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64
+            PATH: /opt/ioext/staging/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        system:
+          mem_limit_mb: 0
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          mount_options: noatime,nodiratime
+          cgroup_path: /sys/fs/cgroup/rq5_lc
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        ycsb_workload:
+          workload_type: b
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: -Xms2048m -Xmx2048m
+          target: 19695
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+            status.interval: 10
+            measurementtype: hdrhistogram
+            hdrhistogram.percentiles: 50,95,99,99.9,99.99
+  be_write_max:
+    count: 1
+    scene_id_template: rq5_be_write_max_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1000
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench
+          rocksdb_home: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb
+          db_path: /opt/ioext/data/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill
+          benchmark: fillrandom
+          duration: 720
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+  be_compact:
+    count: 1
+    scene_id_template: rq5_be_compact_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench
+          rocksdb_home: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb
+          db_path: /opt/ioext/data/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: prefill
+          benchmark: fillrandom
+          args:
+            num: 20000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 67108864
+        - name: settle
+          benchmark: sleep
+          settle_sec: 30
+        - name: compact
+          benchmark: compact
+          args: {}
+  be_ladder_128m:
+    count: 1
+    scene_id_template: rq5_be_ladder_128m_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1000
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench
+          rocksdb_home: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb
+          db_path: /opt/ioext/data/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill
+          benchmark: fillrandom
+          duration: 720
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 134217728
+  be_ladder_256m:
+    count: 1
+    scene_id_template: rq5_be_ladder_256m_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1000
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench
+          rocksdb_home: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb
+          db_path: /opt/ioext/data/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill
+          benchmark: fillrandom
+          duration: 720
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 268435456
+  be_ladder_512m:
+    count: 1
+    scene_id_template: rq5_be_ladder_512m_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1000
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench
+          rocksdb_home: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb
+          db_path: /opt/ioext/data/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill
+          benchmark: fillrandom
+          duration: 720
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 536870912
+  be_ladder_1024m:
+    count: 1
+    scene_id_template: rq5_be_ladder_1024m_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: nvme0n1
+        output_dir: /tmp/m1_cache_bm/scene/{group_id}
+        duration: 1000
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb/db_bench
+          rocksdb_home: /opt/ioext/staging/m1_cache_bm_bundle/rocksdb
+          db_path: /opt/ioext/data/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill
+          benchmark: fillrandom
+          duration: 720
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 1073741824
+test_sequences:
+- sequence_id: RQ5A86_LC_SOLO
+  name: 'RQ5A A0: LC solo capacity anchor (no BE, no offered target)'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc solo
+    tenant_groups:
+    - lc_none
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 800
+    primary_scene: rq5_lc_none_t1
+- sequence_id: RQ5A86_BE_WRITE_MAX
+  name: 'RQ5A A2: LC + BE UNCAPPED fillrandom for 720s (max reproducible interference on real NVMe)'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc + be write max
+    tenant_groups:
+    - lc_none
+    - be_write_max
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1000
+    primary_scene: rq5_be_write_max_t1
+- sequence_id: RQ5A86_BE_COMPACT
+  name: 'RQ5A A3: LC + BE prefill 20M keys then compact (maintenance interference probe)'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc + be compact
+    tenant_groups:
+    - lc_none
+    - be_compact
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1700
+    primary_scene: rq5_be_compact_t1
+- sequence_id: RQ5A86_LADDER_128M
+  name: 'RQ5A ladder: LC + BE fillrandom capped at 128 MiB/s for 720s'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc + be ladder 128m
+    tenant_groups:
+    - lc_none
+    - be_ladder_128m
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1000
+    primary_scene: rq5_be_ladder_128m_t1
+- sequence_id: RQ5A86_LADDER_256M
+  name: 'RQ5A ladder: LC + BE fillrandom capped at 256 MiB/s for 720s'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc + be ladder 256m
+    tenant_groups:
+    - lc_none
+    - be_ladder_256m
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1000
+    primary_scene: rq5_be_ladder_256m_t1
+- sequence_id: RQ5A86_LADDER_512M
+  name: 'RQ5A ladder: LC + BE fillrandom capped at 512 MiB/s for 720s'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc + be ladder 512m
+    tenant_groups:
+    - lc_none
+    - be_ladder_512m
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1000
+    primary_scene: rq5_be_ladder_512m_t1
+- sequence_id: RQ5A86_LADDER_1024M
+  name: 'RQ5A ladder: LC + BE fillrandom capped at 1024 MiB/s for 720s'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5a lc + be ladder 1024m
+    tenant_groups:
+    - lc_none
+    - be_ladder_1024m
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1000
+    primary_scene: rq5_be_ladder_1024m_t1

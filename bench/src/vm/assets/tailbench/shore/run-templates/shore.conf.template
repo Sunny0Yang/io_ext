@@ -1,0 +1,4 @@
+# Minimal TailBench Shore smoke template. Upstream Shore accepts this alongside
+# db-tpcc-1 in the working directory for integrated runs.
+db-config = tpcc-1
+threads = @NTHREADS

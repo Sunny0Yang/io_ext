@@ -1,0 +1,239 @@
+# rig_dbbench q_db follow-up: q_db vs none vs q_ddl on readwhilewriting (vng local)
+#
+# Purpose: D5 decisive check for the q_db two-lane size-threshold policy on the
+# db_bench tail-amplification target. The 7-arm matrix (dbbench_global_vng.yml,
+# results RIG_DBBENCH_REPORT.md) showed rww foreground-read P99 blown from
+# ~0.4ms (clean read) to 14-20ms (~38x) with best arm q_ddl at only -26.5%
+# (14.54ms vs none 19.78ms). q_db classifies by intrinsic request shape:
+# F = <=64KB (128 sectors) reads AND writes -> strict-priority FIFO;
+# B = >64KB bulk -> FIFO with anti-starvation (10ms head wait or 32-F burst
+# forces one B). Design expectation: rww read P99 compressed to single-digit ms.
+#
+# 3 arms, all run FRESH in the same VM boot for a same-day isomorphic control:
+#   none      (native, no loader)
+#   q_ddl     (scx_io + loader_q_ddl  root policy; matrix best iox arm)
+#   q_db      (scx_io + loader_q_db   root policy; target arm)
+#
+# Design discipline (verbatim from dbbench_global_vng.yml):
+#   - single real DB workload per sequence (ONE db_bench process per phase, one cgroup)
+#   - NO cgroup io controller values written (no io_weight / io_max / io.latency)
+#   - fixed accounting cgroup /sys/fs/cgroup/dbbench_rig (io.stat readable)
+#   - no arbiter; iox arms attach one root_policy loader at the cgroup v2 root
+#
+# Phase sequence per arm is copied VERBATIM from dbbench_global_vng.yml
+# _common_phases (fillrandom -> compact -> settle 75s -> readrandom 150s ->
+# settle 30s -> readwhilewriting 150s -> settle 75s -> readrandomwriterandom
+# 150s): same-day comparison must be structurally identical.
+benchmark_name: "rig_dbbench q_db targeted-policy A/B on readwhilewriting (vng local)"
+description: >-
+  Global single-tenant RocksDB db_bench load: 3 scheduler arms (native none +
+  scx_io q_ddl + scx_io q_db root-policy loaders), fresh same-boot runs,
+  O_DIRECT reads + flush/compaction on the 10G vng nvme test disk, phase
+  sequence fillrandom/compact/settle/readrandom/settle/readwhilewriting/
+  settle/readrandomwriterandom, one fixed accounting cgroup, zero io
+  controller writes.
+default_sequence: "DBB_none_qdb"
+
+_common_dbbench: &common_dbbench
+  target_device: "nvme0n1"          # vng VM always exposes the QEMU nvme disk as nvme0n1
+  output_dir: "./test_results/isol_bench/rig_dbbench/{group_id}"
+  duration: 1500
+  drop_caches_before_run: false
+  dbbench:
+    dbbench_bin: "/home/anon/rocksdb/db_bench"
+    rocksdb_home: "/home/anon/rocksdb"
+    db_path: "/tmp/nvme_data/{group_id}_db"
+    use_direct_io: true
+    common_args:
+      num: 1000000
+      value_size: 1024
+      key_size: 16
+      compression_type: "none"
+      bloom_bits: 10
+      cache_size: 0
+      write_buffer_size: 67108864
+  system:
+    auto_format_disk: true
+    format_device: true             # fresh ext4 on the 10G test disk every sequence
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/dbbench_rig"
+
+# Full-scale phase list; VERBATIM copy of dbbench_global_vng.yml _common_phases.
+# Measurement phases are time-bounded via --duration.
+_common_phases: &common_phases
+  phases:
+  - name: "fillrandom"
+    benchmark: "fillrandom"         # builds num x value_size DB; runs to completion
+  - name: "compact"
+    benchmark: "compact"            # manual full compaction: deterministic settle
+  - name: "settle1"
+    benchmark: "sleep"              # drain residual background work
+    settle_sec: 75
+  - name: "readrandom"
+    benchmark: "readrandom"
+    duration: 150
+    args:
+      threads: 4
+  - name: "settle2"
+    benchmark: "sleep"
+    settle_sec: 30
+  - name: "readwhilewriting"
+    benchmark: "readwhilewriting"  # foreground reads + writer thread + flush/compaction
+    duration: 150
+    args:
+      threads: 4
+      writes: 3000000             # cap writer: bounds DB growth to ~4.5GB on the 10G disk
+                                   # (~3M keys worst case; flush/compaction keeps the
+                                   # window polluted after the writer exhausts the cap)
+  - name: "settle3"
+    benchmark: "sleep"
+    settle_sec: 75
+  - name: "readrandomwriterandom"
+    benchmark: "readrandomwriterandom"
+    duration: 150
+    args:
+      threads: 8
+      readwritepercent: 90
+
+_native_scene_io_ext: &native_scene_io_ext
+  cleanup_stale_when_no_specs: true  # no loaders of our own; sweep leftovers from crashed sequences
+  cleanup_bpffs_pins: true
+
+_iox_scene_io_ext: &iox_scene_io_ext
+  cleanup_stale: false               # global loader scene owns the loader chain for the sequence
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 1800
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      output_dir: "./test_results/isol_bench/rig_dbbench/system_metric"
+
+io_ext_policy_profiles:
+  arm_none:
+    name: "rig dbbench qdb-rig native none"
+    target_device: "nvme0n1"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_iox_q_ddl:
+    name: "rig dbbench qdb-rig iox q_ddl"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_ddl_root"
+        path: "/opt/io-ext/userspace/loader_q_ddl"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_q_db:
+    name: "rig dbbench qdb-rig iox q_db"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_db_root"
+        path: "/opt/io-ext/userspace/loader_q_db"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+
+tenant_groups:
+  # ---------- full-scale arms (same-boot fresh controls) ----------
+  dbb_none_qdb:
+    count: 1
+    scene_id_template: "dbb_none_qdb_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        <<: *common_phases
+  dbb_iox_q_ddl:
+    count: 1
+    scene_id_template: "dbb_iox_q_ddl_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        <<: *common_phases
+  dbb_iox_q_db:
+    count: 1
+    scene_id_template: "dbb_iox_q_db_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        <<: *common_phases
+
+test_sequences:
+- sequence_id: "DBB_none_qdb"
+  name: "dbbench native none (same-round control)"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "dbbench none (qdb round)"
+    tenant_groups:
+    - "dbb_none_qdb"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 1500
+- sequence_id: "DBB_iox_q_ddl"
+  name: "dbbench iox scx_io q_ddl (best-matrix iox control)"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "dbbench iox q_ddl (qdb round)"
+    tenant_groups:
+    - "dbb_iox_q_ddl"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 1500
+- sequence_id: "DBB_iox_q_db"
+  name: "dbbench iox scx_io q_db (target arm)"
+  io_ext_policy: "arm_iox_q_db"
+  steps:
+  - name: "dbbench iox q_db (qdb round)"
+    tenant_groups:
+    - "dbb_iox_q_db"
+    monitoring_scenes:
+    - "ib_system_metric"
+    monitoring_startup_time: 3
+    duration: 1500

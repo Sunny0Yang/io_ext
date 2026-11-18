@@ -1,0 +1,530 @@
+# AUTO-ADAPTED paper experiment -> kvmhost dress-rehearsal copy (sdb track)
+# RECAL on new hardware (grep for 'RECAL('):
+#   RECAL(DEVICE)  target_device=sdb (file_name=/dev/sdb)
+#   RECAL(CPUBIND) batch cpu pinning='1-5' (6-vCPU guest; paper default 1-10)
+#   RECAL(LOADERS) loader path=/opt/io-ext/userspace/loader_*
+#   REMOVED 2026-10-21: arb_wfq / arb_hwfq / local_ddl deleted (no source)
+benchmark_name: isol_bench D1-Q6 hierarchy-depth scaling (iosched_ext)
+description: >-
+  D1-Q6 hierarchy-depth scaling: measures O(depth) overhead of the
+  ancestor-policy lookup chain. cgroup tree depth = 1, 2, 4, 8, 16 while
+  the number of active jobs, total QD, and offered IOPS are held constant.
+  The leaf cgroup runs the workload; policy is attached ONLY at the root
+  so every request traverses the full ancestor chain to find an active
+  policy. This stress-tests the nearest-policy lookup path.
+  Baselines: none (native floor), iox_bare (scx_io substrate),
+             iox_fifo (BPF queue at root, leaf inherits).
+  REMOVED 2026-10-21: iox_arb_hwfq deleted from the grid (no source/binary in ioext, proposal-only; hierarchical-weight niche covered by the T2/T3 topology arms)
+  ref/gpt-matrix/hierarchy-upgrade.md §8 but has no loader binary yet;
+  sequences referencing it are marked _unimplemented_ and will fail at
+  loader-start until loader_arb_hwfq is built. Included so the grid is
+  complete and ready once the loader lands.
+  Tree topology example (depth=4):
+    /sys/fs/cgroup/ib_d1q6_d4/a/b/c/workload
+  Policy attached only at /sys/fs/cgroup/ib_d1q6_d4 (root of the subtree).
+  Reference: ref/gpt-matrix/hierarchy-upgrade.md E6/§9; matrix-and-goal.md.
+
+_unlimited_io_max: &unlimited_io_max
+  rbps: "max"
+  wbps: "max"
+  riops: "max"
+  wiops: "max"
+
+_io_ext_cleanup: &io_ext_cleanup
+  cleanup_stale: true
+  cleanup_bpffs_pins: true
+  stale_loader_patterns:
+    - "loader_arb_"
+    - "loader_q_"
+    - "loader_minimal"
+  root_cgroup:
+    path: "/sys/fs/cgroup"
+    controllers: ["io"]
+
+_io_ext_passthrough: &io_ext_passthrough
+  cleanup_stale: false
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+# Per-depth leaf cgroup path templates. The workload runs at the leaf;
+# policy is attached at the subtree root so ancestor lookup walks `depth`
+# levels. Intermediate cgroups are created with no policy (inherited).
+# Depth 1  -> /sys/fs/cgroup/ib_d1q6_d1_t{idx1}
+# Depth 2  -> /sys/fs/cgroup/ib_d1q6_d2/a_t{idx1}
+# Depth 4  -> /sys/fs/cgroup/ib_d1q6_d4/a/b/c_t{idx1}
+# Depth 8  -> /sys/fs/cgroup/ib_d1q6_d8/a/b/c/d/e/f/g_t{idx1}
+# Depth 16 -> /sys/fs/cgroup/ib_d1q6_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o_t{idx1}
+
+_common_params: &common_params
+  target_device: "sdb"
+  file_name: "/dev/sdb"
+  scheduler_tunables: {}
+  output_dir: "./test_results/isol_bench/paper_sdb/d1_q6/{group_id}"
+  duration: 120
+  drop_caches_before_run: false
+  cooldown_sec: 1
+
+_fio_batch: &fio_batch
+  ioengine: "libaio"
+  direct: 1
+  bs: "4k"
+  rw: "randread"
+  iodepth: 256
+  numjobs: 1
+  runtime_sec: 60
+  time_based: true
+  group_reporting: true
+  ramp_time: 20
+  cpus_allowed: "1-5"
+  percentile_list: "20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100"
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      output_dir: "./test_results/isol_bench/paper_sdb/d1_q6/system_metric"
+  ib_perf_stat:
+    base_scene: "scene/system/perf_stat.yml"
+    parameters:
+      cpu_list: "2"
+      sample_interval_ms: 1000
+      require_available: false
+      output_dir: "./test_results/isol_bench/paper_sdb/d1_q6/perf_stat"
+
+io_ext_policy_profiles:
+  nat_none:
+    name: "D1-Q6 native none (floor)"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  iox_bare:
+    name: "D1-Q6 iox_bare (scx_io substrate, no policies)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+  iox_fifo:
+    name: "D1-Q6 iox_fifo (q_fifo at root, leaf inherits via ancestor chain)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      root_policies:
+        - name: "q_fifo_root"
+          path: "/opt/io-ext/userspace/loader_q_fifo"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+
+# ── tenant_groups: one leaf group per depth × profile ───────────────────────
+# Each leaf group has count=1 (single active job at the leaf). The cgroup
+# path encodes the tree depth so ancestor lookup walks `depth` levels.
+# Intermediate cgroups are created by the scene's cgroup setup (parent
+# directories are created as cgroup v2 subdirectories with io controller
+# enabled, but NO policy attached — so lookup must walk up to the root).
+tenant_groups:
+  # === depth 1 ===
+  d1_native:
+    count: 1
+    scene_id_template: "ib_d1q6_d1_native_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "none"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d1_t{idx1}"
+            controllers: ["io"]
+            io_weight: 100
+            io_max: *unlimited_io_max
+            io_cost:
+              qos:
+                enable: false
+  d1_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q6_d1_iox_bare_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d1_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d1_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q6_d1_iox_fifo_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d1_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+
+  # === depth 2 ===
+  d2_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q6_d2_iox_bare_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d2/a_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q6_d2_iox_fifo_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d2/a_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_native:
+    count: 1
+    scene_id_template: "ib_d1q6_d2_native_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "none"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d2/a_t{idx1}"
+            controllers: ["io"]
+            io_weight: 100
+            io_max: *unlimited_io_max
+            io_cost:
+              qos:
+                enable: false
+
+  # === depth 4 ===
+  d4_native:
+    count: 1
+    scene_id_template: "ib_d1q6_d4_native_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "none"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d4/a/b/c_t{idx1}"
+            controllers: ["io"]
+            io_weight: 100
+            io_max: *unlimited_io_max
+            io_cost:
+              qos:
+                enable: false
+  d4_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q6_d4_iox_bare_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d4/a/b/c_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d4_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q6_d4_iox_fifo_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d4/a/b/c_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+
+  # === depth 8 ===
+  d8_native:
+    count: 1
+    scene_id_template: "ib_d1q6_d8_native_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "none"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d8/a/b/c/d/e/f/g_t{idx1}"
+            controllers: ["io"]
+            io_weight: 100
+            io_max: *unlimited_io_max
+            io_cost:
+              qos:
+                enable: false
+  d8_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q6_d8_iox_bare_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d8/a/b/c/d/e/f/g_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d8_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q6_d8_iox_fifo_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d8/a/b/c/d/e/f/g_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+
+  # === depth 16 ===
+  d16_native:
+    count: 1
+    scene_id_template: "ib_d1q6_d16_native_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "none"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o_t{idx1}"
+            controllers: ["io"]
+            io_weight: 100
+            io_max: *unlimited_io_max
+            io_cost:
+              qos:
+                enable: false
+  d16_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q6_d16_iox_bare_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d16_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q6_d16_iox_fifo_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup:
+            path: "/sys/fs/cgroup/ib_d1q6_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o_t{idx1}"
+            controllers: ["io"]
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+
+test_sequences:
+  # === depth 1 ===
+  - sequence_id: "D1Q6_d1_native"
+    name: "D1-Q6 depth=1 native none"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "depth=1 native", tenant_groups: ["d1_native"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d1_iox_bare"
+    name: "D1-Q6 depth=1 iox_bare"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "depth=1 iox_bare", tenant_groups: ["d1_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d1_iox_fifo"
+    name: "D1-Q6 depth=1 iox_fifo"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "depth=1 iox_fifo", tenant_groups: ["d1_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === depth 2 ===
+  - sequence_id: "D1Q6_d2_native"
+    name: "D1-Q6 depth=2 native none"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "depth=2 native", tenant_groups: ["d2_native"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d2_iox_bare"
+    name: "D1-Q6 depth=2 iox_bare"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "depth=2 iox_bare", tenant_groups: ["d2_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d2_iox_fifo"
+    name: "D1-Q6 depth=2 iox_fifo"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "depth=2 iox_fifo", tenant_groups: ["d2_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === depth 4 ===
+  - sequence_id: "D1Q6_d4_native"
+    name: "D1-Q6 depth=4 native none"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "depth=4 native", tenant_groups: ["d4_native"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d4_iox_bare"
+    name: "D1-Q6 depth=4 iox_bare"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "depth=4 iox_bare", tenant_groups: ["d4_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d4_iox_fifo"
+    name: "D1-Q6 depth=4 iox_fifo"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "depth=4 iox_fifo", tenant_groups: ["d4_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === depth 8 ===
+  - sequence_id: "D1Q6_d8_native"
+    name: "D1-Q6 depth=8 native none"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "depth=8 native", tenant_groups: ["d8_native"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d8_iox_bare"
+    name: "D1-Q6 depth=8 iox_bare"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "depth=8 iox_bare", tenant_groups: ["d8_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d8_iox_fifo"
+    name: "D1-Q6 depth=8 iox_fifo"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "depth=8 iox_fifo", tenant_groups: ["d8_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === depth 16 ===
+  - sequence_id: "D1Q6_d16_native"
+    name: "D1-Q6 depth=16 native none"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "depth=16 native", tenant_groups: ["d16_native"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d16_iox_bare"
+    name: "D1-Q6 depth=16 iox_bare"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "depth=16 iox_bare", tenant_groups: ["d16_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q6_d16_iox_fifo"
+    name: "D1-Q6 depth=16 iox_fifo"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "depth=16 iox_fifo", tenant_groups: ["d16_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === depth 16 iox_arb_hwfq UNIMPLEMENTED — will fail until loader_arb_hwfq is built ===
+default_sequence: "D1Q6_d1_native"
+fail_fast_on_scene_error: false

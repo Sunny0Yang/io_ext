@@ -1,0 +1,632 @@
+# rig_ycsb: YCSB/RocksDB GLOBAL-load scheduler matrix (virtme-ng local test)
+#
+# Design discipline (this round = global load only):
+#   - single real DB workload per sequence (one YCSB process, one cgroup)
+#   - NO cgroup io controller values written (no io_weight / io_max / io_latency)
+#   - fixed workload cgroup /sys/fs/cgroup/ycsb_rig for accounting only
+#   - no arbiter; iox arms attach one root_policy loader at the cgroup v2 root
+#
+# Arms (io_ext_policy_profiles):
+#   native: none / kyber / mq-deadline / bfq   (scene pins scheduler, no loader)
+#   iox:   scx_io + root_policies loader_q_{fifo,kyber,ddl,sp_edf} -c /sys/fs/cgroup
+#
+# Workloads: a (50% read / 50% update -> WAL + flush/compaction background writes)
+#            c (100% read -> pure foreground read control)
+# Run phase is time-bounded via YCSB maxexecutiontime=150s; operationcount is a
+# high ceiling so ops/sec measurement is over a fixed ~150s window.
+benchmark_name: "rig_ycsb global-load YCSB/RocksDB scheduler x workload matrix (vng local)"
+description: >-
+  Global single-tenant YCSB/RocksDB load: 8 scheduler arms (none/kyber/mq-deadline/
+  bfq native + scx_io q_fifo/q_kyber/q_ddl/q_sp_edf root-policy loaders) x 2 YCSB
+  workloads (a=read/update, c=read-only), direct-I/O RocksDB on the 10G vng nvme
+  test disk, one fixed accounting cgroup, zero io controller writes.
+default_sequence: "YCSB_smoke_none_c"
+
+# Common YCSB run-scale knobs; per-arm templates merge `<<: *common_workload`
+# inside ycsb_workload and add workload_type. Explicit keys here MUST stay
+# complete because base-scene defaults (recordcount=1000 etc.) are only
+# overridden by keys actually present in the task-level mapping.
+_common_workload: &common_workload
+  recordcount: 400000              # ~4GB logical (10 x 1024B fields); sized so 16 matrix
+                                     # loads fit the 2.5h local budget at ~3k inserts/s
+  operationcount: 10000000        # ceiling; maxexecutiontime bounds the run phase
+  threads: 16
+  jvm_args: "-Xms2048m -Xmx2048m"
+  properties:
+    fieldcount: 10
+    fieldlength: 1024
+    maxexecutiontime: 150          # run phase ~150s regardless of ops rate
+
+_common_ycsb_params: &common_ycsb
+  target_device: "nvme0n1"          # vng VM always exposes the QEMU nvme disk as nvme0n1
+  output_dir: "./test_results/isol_bench/rig_ycsb/{group_id}"
+  duration: 2100                     # scene-level bound (informational); real bound is step duration
+  drop_caches_before_run: false      # direct-I/O RocksDB: page cache irrelevant for data files
+  database:
+    db_type: "rocksdb"
+    data_dir: "/tmp/nvme_data/{group_id}_tenant_{idx1}"   # /tmp/nvme_data = target disk mount point
+    ycsb_dir: "src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: true              # scene emits options file: O_DIRECT reads + flush/compaction
+    write_buffer_size: 67108864      # 64MB memtable: load phase fast enough for the 2.5h local budget,
+                                     # still ~1 flush every few seconds of workloada run-phase updates
+    storage_backend: "kernel_block"
+  system:
+    mem_limit_mb: 0                  # no memory cgroup limiting
+    auto_format_disk: true
+    format_device: true              # fresh ext4 on the 10G test disk every sequence
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/ycsb_rig"   # fixed accounting-only cgroup; no io.* values written
+
+_native_scene_io_ext: &native_scene_io_ext
+  cleanup_stale_when_no_specs: true  # no loaders of our own; sweep leftovers from crashed sequences
+  cleanup_bpffs_pins: true
+
+_iox_scene_io_ext: &iox_scene_io_ext
+  cleanup_stale: false               # global loader scene owns the loader chain for the sequence
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      output_dir: "./test_results/isol_bench/rig_ycsb/system_metric"
+  ib_block_io_latency_cost:
+    base_scene: "scene/block_bpf/block_io_latency_cost.yml"
+    parameters:
+      output_dir: "./test_results/isol_bench/rig_ycsb/block_io_latency_cost"
+      output_file: "./test_results/isol_bench/rig_ycsb/block_io_latency_cost/block_io_latency_cost.bpftrace.log"
+      summary_file: "./test_results/isol_bench/rig_ycsb/block_io_latency_cost/block_io_latency_cost_summary.json"
+      require_events: false
+      privilege:
+        method: "sudo_nopasswd"
+        askpass_script: ""
+
+io_ext_policy_profiles:
+  arm_none:
+    name: "rig ycsb native none"
+    target_device: "nvme0n1"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_kyber:
+    name: "rig ycsb native kyber"
+    target_device: "nvme0n1"
+    scheduler: "kyber"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_mq_deadline:
+    name: "rig ycsb native mq-deadline"
+    target_device: "nvme0n1"
+    scheduler: "mq-deadline"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_bfq:
+    name: "rig ycsb native bfq"
+    target_device: "nvme0n1"
+    scheduler: "bfq"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_iox_q_fifo:
+    name: "rig ycsb iox q_fifo"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_fifo_root"
+        path: "/opt/io-ext/userspace/loader_q_fifo"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_q_kyber:
+    name: "rig ycsb iox q_kyber"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_kyber_root"
+        path: "/opt/io-ext/userspace/loader_q_kyber"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_q_ddl:
+    name: "rig ycsb iox q_ddl"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_ddl_root"
+        path: "/opt/io-ext/userspace/loader_q_ddl"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_q_sp_edf:
+    name: "rig ycsb iox q_sp_edf"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_sp_edf_root"
+        path: "/opt/io-ext/userspace/loader_q_sp_edf"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+
+tenant_groups:
+  # ---------- smoke: native none + workloadc, small scale ----------
+  ycsb_smoke_none_c:
+    count: 1
+    scene_id_template: "ycsb_smoke_none_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        duration: 900
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+          recordcount: 100000
+          operationcount: 100000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 120
+  # ---------- workloada arms: 50% read / 50% update ----------
+  ycsb_none_a:
+    count: 1
+    scene_id_template: "ycsb_none_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_kyber_a:
+    count: 1
+    scene_id_template: "ycsb_kyber_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "kyber"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_mq_deadline_a:
+    count: 1
+    scene_id_template: "ycsb_mq_deadline_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "mq-deadline"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_bfq_a:
+    count: 1
+    scene_id_template: "ycsb_bfq_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "bfq"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_iox_q_fifo_a:
+    count: 1
+    scene_id_template: "ycsb_iox_q_fifo_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_iox_q_kyber_a:
+    count: 1
+    scene_id_template: "ycsb_iox_q_kyber_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_iox_q_ddl_a:
+    count: 1
+    scene_id_template: "ycsb_iox_q_ddl_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_iox_q_sp_edf_a:
+    count: 1
+    scene_id_template: "ycsb_iox_q_sp_edf_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  # ---------- workloadc arms: 100% read ----------
+  ycsb_none_c:
+    count: 1
+    scene_id_template: "ycsb_none_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_kyber_c:
+    count: 1
+    scene_id_template: "ycsb_kyber_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "kyber"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_mq_deadline_c:
+    count: 1
+    scene_id_template: "ycsb_mq_deadline_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "mq-deadline"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_bfq_c:
+    count: 1
+    scene_id_template: "ycsb_bfq_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "bfq"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_iox_q_fifo_c:
+    count: 1
+    scene_id_template: "ycsb_iox_q_fifo_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_iox_q_kyber_c:
+    count: 1
+    scene_id_template: "ycsb_iox_q_kyber_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_iox_q_ddl_c:
+    count: 1
+    scene_id_template: "ycsb_iox_q_ddl_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_iox_q_sp_edf_c:
+    count: 1
+    scene_id_template: "ycsb_iox_q_sp_edf_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+
+test_sequences:
+- sequence_id: "YCSB_smoke_none_c"
+  name: "smoke: native none + workloadc small scale (100k records)"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "smoke workloadc 100k/100k none"
+    tenant_groups:
+    - "ycsb_smoke_none_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "YCSB_none_a"
+  name: "workloada native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "workloada none"
+    tenant_groups:
+    - "ycsb_none_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_kyber_a"
+  name: "workloada native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "workloada kyber"
+    tenant_groups:
+    - "ycsb_kyber_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_mq_deadline_a"
+  name: "workloada native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "workloada mq-deadline"
+    tenant_groups:
+    - "ycsb_mq_deadline_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_bfq_a"
+  name: "workloada native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "workloada bfq"
+    tenant_groups:
+    - "ycsb_bfq_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_fifo_a"
+  name: "workloada iox scx_io q_fifo"
+  io_ext_policy: "arm_iox_q_fifo"
+  steps:
+  - name: "workloada iox q_fifo"
+    tenant_groups:
+    - "ycsb_iox_q_fifo_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_kyber_a"
+  name: "workloada iox scx_io q_kyber"
+  io_ext_policy: "arm_iox_q_kyber"
+  steps:
+  - name: "workloada iox q_kyber"
+    tenant_groups:
+    - "ycsb_iox_q_kyber_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_ddl_a"
+  name: "workloada iox scx_io q_ddl"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "workloada iox q_ddl"
+    tenant_groups:
+    - "ycsb_iox_q_ddl_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_sp_edf_a"
+  name: "workloada iox scx_io q_sp_edf"
+  io_ext_policy: "arm_iox_q_sp_edf"
+  steps:
+  - name: "workloada iox q_sp_edf"
+    tenant_groups:
+    - "ycsb_iox_q_sp_edf_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_none_c"
+  name: "workloadc native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "workloadc none"
+    tenant_groups:
+    - "ycsb_none_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_kyber_c"
+  name: "workloadc native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "workloadc kyber"
+    tenant_groups:
+    - "ycsb_kyber_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_mq_deadline_c"
+  name: "workloadc native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "workloadc mq-deadline"
+    tenant_groups:
+    - "ycsb_mq_deadline_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_bfq_c"
+  name: "workloadc native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "workloadc bfq"
+    tenant_groups:
+    - "ycsb_bfq_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_fifo_c"
+  name: "workloadc iox scx_io q_fifo"
+  io_ext_policy: "arm_iox_q_fifo"
+  steps:
+  - name: "workloadc iox q_fifo"
+    tenant_groups:
+    - "ycsb_iox_q_fifo_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_kyber_c"
+  name: "workloadc iox scx_io q_kyber"
+  io_ext_policy: "arm_iox_q_kyber"
+  steps:
+  - name: "workloadc iox q_kyber"
+    tenant_groups:
+    - "ycsb_iox_q_kyber_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_ddl_c"
+  name: "workloadc iox scx_io q_ddl"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "workloadc iox q_ddl"
+    tenant_groups:
+    - "ycsb_iox_q_ddl_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_iox_q_sp_edf_c"
+  name: "workloadc iox scx_io q_sp_edf"
+  io_ext_policy: "arm_iox_q_sp_edf"
+  steps:
+  - name: "workloadc iox q_sp_edf"
+    tenant_groups:
+    - "ycsb_iox_q_sp_edf_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100

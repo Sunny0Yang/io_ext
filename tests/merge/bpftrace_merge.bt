@@ -1,0 +1,45 @@
+#!/usr/bin/env bpftrace
+/*
+ * bpftrace_merge.bt - auxiliary merge path probe (L3 observation layer).
+ * Only functional when merge hook symbols are present in /proc/kallsyms
+ * (i.e. CONFIG_IOSCHED_EXT_DEBUG + noinline). Not a PASS requirement.
+ */
+BEGIN
+{
+    printf("bpftrace_merge: start (auxiliary probe)\n");
+}
+
+kprobe:scx_io_allow_merge
+{
+    @allow_merge_calls = count();
+}
+
+kprobe:scx_io_bio_merge
+{
+    @bio_merge_calls = count();
+}
+
+kprobe:scx_io_request_merge
+{
+    @request_merge_calls = count();
+}
+
+kprobe:scx_io_former_request
+{
+    @former_request_calls = count();
+}
+
+kprobe:scx_io_request_merged
+{
+    @request_merged_calls = count();
+}
+
+END
+{
+    printf("bpftrace_merge: end\n");
+    print(@allow_merge_calls);
+    print(@bio_merge_calls);
+    print(@request_merge_calls);
+    print(@former_request_calls);
+    print(@request_merged_calls);
+}

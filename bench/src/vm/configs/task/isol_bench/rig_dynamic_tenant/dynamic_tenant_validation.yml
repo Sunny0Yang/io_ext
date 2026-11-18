@@ -1,0 +1,816 @@
+benchmark_name: isol_bench rig dynamic tenant validation (frozen schedule vs best-static, virtme)
+description: 'Validation phase (pre-declared gate, NO schedule re-tuning): the feasibility schedule from
+  schedule_feasible.json is executed for real on the timeline scene and paired against the best-static
+  arm f1_arbfb on 3 independent validation seeds. Seed derivation: V_j = 20261103 + 10*j = {1: 20261113,
+  2: 20261123, 3: 20261133}; per-tenant seeds = base + tenant index (contract 7.11 rule); no tuning seed
+  reused. owner_token wait widened to 10s (scene action parameter; the loader has no ownership-wait timeout
+  of its own - see results/dynamic_tenant_validation/loader_patch/). Frozen schedule under validation:
+  {''1'': ''n4_native_kyber'', ''2'': ''n1_native_none'', ''3'': ''n1_native_none'', ''4'': ''f1_arbfb'',
+  ''5'': ''f1_arbfb'', ''6'': ''n4_native_kyber''} (dynamic-vs-static hypothetical delta -5.44%).'
+fail_fast_on_scene_error: true
+scenes:
+  ib_rdyn_valid_smoke_ab:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: valid_smoke_ab
+      phase_length_sec: 15
+      num_phases: 4
+      randseed_base: 20261113
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_smoke_ab
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 120
+      tenants:
+      - a
+      - b
+      tenant_windows:
+        a:
+        - 1
+        - 4
+        b:
+        - 2
+        - 3
+      allow_transition_exec: true
+      loader_dir: /opt/ioext-io_ext/userspace/io/build
+      phase_actions:
+        1:
+        - type: switch_native
+          scheduler: mq-deadline
+        2:
+        - type: attach_io_ext
+          scheduler: scx_io
+          io_ext:
+            cleanup_stale: false
+            cleanup_bpffs_pins: false
+            cleanup_stale_when_no_specs: false
+            loader_start_gap_sec: 0.5
+            arbiters:
+            - name: valid_smoke_ab_wdrr_arb
+              path: /opt/ioext-io_ext/userspace/io/build/loader_arb_wdrr
+            cgroup_policies:
+            - name: ta_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_smoke_ab_ta
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '0'
+              - -W
+              - '400'
+            - name: tb_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_smoke_ab_tb
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+        3:
+        - type: swap_q
+          tenants:
+          - a
+          q: q_none
+          arb_prio: 0
+          arb_weight: 400
+          owner_token_timeout_sec: 10
+        - type: swap_q
+          tenants:
+          - a
+          q: q_fifo
+          arb_prio: 0
+          arb_weight: 400
+          owner_token_timeout_sec: 10
+        4:
+        - type: detach_io_ext
+          scheduler: none
+          drain_timeout_sec: 30
+  ib_rdyn_valid_s1_dynamic:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: kyber
+      timeline_id: valid_s1_dynamic
+      phase_length_sec: 90.0
+      num_phases: 6
+      randseed_base: 20261113
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_s1_dynamic
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        rate_b_mib_s: 1037
+        rate_c_mib_s: 976
+        d_rate: unlimited
+        seed_base: 20261113
+        seed_derivation: 'contract 7.11 rule: per-tenant randseed = base + tenant index (a=+1..d=+4),
+          randrepeat=1'
+        validation_seed_bases: &id001
+          1: 20261113
+          2: 20261123
+          3: 20261133
+        schedule_source: results/dynamic_tenant_static_arms/schedule_feasible.json
+        schedule_phases:
+          '1': n4_native_kyber
+          '2': n1_native_none
+          '3': n1_native_none
+          '4': f1_arbfb
+          '5': f1_arbfb
+          '6': n4_native_kyber
+        owner_token_timeout_sec: 10
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+          max_boundary_drift_sec: 1.0
+      tenants:
+        a: {}
+        b:
+          rate: 1037M
+        c:
+          rate: 976M
+        d: {}
+      allow_transition_exec: true
+      loader_dir: /opt/ioext-io_ext/userspace/io/build
+      phase_actions:
+        1:
+        - type: switch_native
+          scheduler: none
+        3:
+        - type: attach_io_ext
+          scheduler: scx_io
+          io_ext:
+            cleanup_stale: false
+            cleanup_bpffs_pins: false
+            cleanup_stale_when_no_specs: false
+            loader_start_gap_sec: 0.5
+            arbiters:
+            - name: valid_s1_dynamic_feedback_arb
+              path: /opt/ioext-io_ext/userspace/io/build/loader_arb_feedback
+            cgroup_policies:
+            - name: ta_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_dynamic_ta
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '0'
+              - -W
+              - '400'
+            - name: tb_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_dynamic_tb
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+            - name: tc_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_dynamic_tc
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '2'
+              - -W
+              - '200'
+            - name: td_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_dynamic_td
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+        5:
+        - type: detach_io_ext
+          scheduler: kyber
+          drain_timeout_sec: 30
+  ib_rdyn_valid_s1_static:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: valid_s1_static
+      phase_length_sec: 90.0
+      num_phases: 6
+      randseed_base: 20261113
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_s1_static
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        rate_b_mib_s: 1037
+        rate_c_mib_s: 976
+        d_rate: unlimited
+        seed_base: 20261113
+        seed_derivation: 'contract 7.11 rule: per-tenant randseed = base + tenant index (a=+1..d=+4),
+          randrepeat=1'
+        validation_seed_bases: *id001
+        schedule_source: results/dynamic_tenant_static_arms/schedule_feasible.json
+        schedule_phases:
+          '1': n4_native_kyber
+          '2': n1_native_none
+          '3': n1_native_none
+          '4': f1_arbfb
+          '5': f1_arbfb
+          '6': n4_native_kyber
+        owner_token_timeout_sec: 10
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+          max_boundary_drift_sec: 1.0
+      tenants:
+        a: {}
+        b:
+          rate: 1037M
+        c:
+          rate: 976M
+        d: {}
+  ib_rdyn_valid_s2_dynamic:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: kyber
+      timeline_id: valid_s2_dynamic
+      phase_length_sec: 90.0
+      num_phases: 6
+      randseed_base: 20261123
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_s2_dynamic
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        rate_b_mib_s: 1037
+        rate_c_mib_s: 976
+        d_rate: unlimited
+        seed_base: 20261123
+        seed_derivation: 'contract 7.11 rule: per-tenant randseed = base + tenant index (a=+1..d=+4),
+          randrepeat=1'
+        validation_seed_bases: *id001
+        schedule_source: results/dynamic_tenant_static_arms/schedule_feasible.json
+        schedule_phases:
+          '1': n4_native_kyber
+          '2': n1_native_none
+          '3': n1_native_none
+          '4': f1_arbfb
+          '5': f1_arbfb
+          '6': n4_native_kyber
+        owner_token_timeout_sec: 10
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+          max_boundary_drift_sec: 1.0
+      tenants:
+        a: {}
+        b:
+          rate: 1037M
+        c:
+          rate: 976M
+        d: {}
+      allow_transition_exec: true
+      loader_dir: /opt/ioext-io_ext/userspace/io/build
+      phase_actions:
+        1:
+        - type: switch_native
+          scheduler: none
+        3:
+        - type: attach_io_ext
+          scheduler: scx_io
+          io_ext:
+            cleanup_stale: false
+            cleanup_bpffs_pins: false
+            cleanup_stale_when_no_specs: false
+            loader_start_gap_sec: 0.5
+            arbiters:
+            - name: valid_s2_dynamic_feedback_arb
+              path: /opt/ioext-io_ext/userspace/io/build/loader_arb_feedback
+            cgroup_policies:
+            - name: ta_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_dynamic_ta
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '0'
+              - -W
+              - '400'
+            - name: tb_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_dynamic_tb
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+            - name: tc_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_dynamic_tc
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '2'
+              - -W
+              - '200'
+            - name: td_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_dynamic_td
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+        5:
+        - type: detach_io_ext
+          scheduler: kyber
+          drain_timeout_sec: 30
+  ib_rdyn_valid_s2_static:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: valid_s2_static
+      phase_length_sec: 90.0
+      num_phases: 6
+      randseed_base: 20261123
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_s2_static
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        rate_b_mib_s: 1037
+        rate_c_mib_s: 976
+        d_rate: unlimited
+        seed_base: 20261123
+        seed_derivation: 'contract 7.11 rule: per-tenant randseed = base + tenant index (a=+1..d=+4),
+          randrepeat=1'
+        validation_seed_bases: *id001
+        schedule_source: results/dynamic_tenant_static_arms/schedule_feasible.json
+        schedule_phases:
+          '1': n4_native_kyber
+          '2': n1_native_none
+          '3': n1_native_none
+          '4': f1_arbfb
+          '5': f1_arbfb
+          '6': n4_native_kyber
+        owner_token_timeout_sec: 10
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+          max_boundary_drift_sec: 1.0
+      tenants:
+        a: {}
+        b:
+          rate: 1037M
+        c:
+          rate: 976M
+        d: {}
+  ib_rdyn_valid_s3_dynamic:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: kyber
+      timeline_id: valid_s3_dynamic
+      phase_length_sec: 90.0
+      num_phases: 6
+      randseed_base: 20261133
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_s3_dynamic
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        rate_b_mib_s: 1037
+        rate_c_mib_s: 976
+        d_rate: unlimited
+        seed_base: 20261133
+        seed_derivation: 'contract 7.11 rule: per-tenant randseed = base + tenant index (a=+1..d=+4),
+          randrepeat=1'
+        validation_seed_bases: *id001
+        schedule_source: results/dynamic_tenant_static_arms/schedule_feasible.json
+        schedule_phases:
+          '1': n4_native_kyber
+          '2': n1_native_none
+          '3': n1_native_none
+          '4': f1_arbfb
+          '5': f1_arbfb
+          '6': n4_native_kyber
+        owner_token_timeout_sec: 10
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+          max_boundary_drift_sec: 1.0
+      tenants:
+        a: {}
+        b:
+          rate: 1037M
+        c:
+          rate: 976M
+        d: {}
+      allow_transition_exec: true
+      loader_dir: /opt/ioext-io_ext/userspace/io/build
+      phase_actions:
+        1:
+        - type: switch_native
+          scheduler: none
+        3:
+        - type: attach_io_ext
+          scheduler: scx_io
+          io_ext:
+            cleanup_stale: false
+            cleanup_bpffs_pins: false
+            cleanup_stale_when_no_specs: false
+            loader_start_gap_sec: 0.5
+            arbiters:
+            - name: valid_s3_dynamic_feedback_arb
+              path: /opt/ioext-io_ext/userspace/io/build/loader_arb_feedback
+            cgroup_policies:
+            - name: ta_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_dynamic_ta
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '0'
+              - -W
+              - '400'
+            - name: tb_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_dynamic_tb
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+            - name: tc_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_dynamic_tc
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '2'
+              - -W
+              - '200'
+            - name: td_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_dynamic_td
+              args:
+              - -c
+              - '{policy_cgroup_path}'
+              - -p
+              - '5'
+              - -W
+              - '100'
+        5:
+        - type: detach_io_ext
+          scheduler: kyber
+          drain_timeout_sec: 30
+  ib_rdyn_valid_s3_static:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: scx_io
+      timeline_id: valid_s3_static
+      phase_length_sec: 90.0
+      num_phases: 6
+      randseed_base: 20261133
+      output_dir: /opt/ioext/results/dynamic_tenant_validation/run_dirs/valid_s3_static
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 600
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        rate_b_mib_s: 1037
+        rate_c_mib_s: 976
+        d_rate: unlimited
+        seed_base: 20261133
+        seed_derivation: 'contract 7.11 rule: per-tenant randseed = base + tenant index (a=+1..d=+4),
+          randrepeat=1'
+        validation_seed_bases: *id001
+        schedule_source: results/dynamic_tenant_static_arms/schedule_feasible.json
+        schedule_phases:
+          '1': n4_native_kyber
+          '2': n1_native_none
+          '3': n1_native_none
+          '4': f1_arbfb
+          '5': f1_arbfb
+          '6': n4_native_kyber
+        owner_token_timeout_sec: 10
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+          max_boundary_drift_sec: 1.0
+      tenants:
+        a: {}
+        b:
+          rate: 1037M
+        c:
+          rate: 976M
+        d: {}
+io_ext_policy_profiles:
+  F_valid_s1_arbfb:
+    name: dynamic tenant validation best-static arm F_valid_s1_arbfb
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_validation/loader_scene_logs/valid_s1_static
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_valid_s1_arbfb_feedback_arb
+        path: /opt/ioext-io_ext/userspace/io/build/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_static_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_static_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_static_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s1_static_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  F_valid_s2_arbfb:
+    name: dynamic tenant validation best-static arm F_valid_s2_arbfb
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_validation/loader_scene_logs/valid_s2_static
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_valid_s2_arbfb_feedback_arb
+        path: /opt/ioext-io_ext/userspace/io/build/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_static_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_static_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_static_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s2_static_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+  F_valid_s3_arbfb:
+    name: dynamic tenant validation best-static arm F_valid_s3_arbfb
+    target_device: nvme0n1
+    scheduler: scx_io
+    output_dir: /opt/ioext/results/dynamic_tenant_validation/loader_scene_logs/valid_s3_static
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: F_valid_s3_arbfb_feedback_arb
+        path: /opt/ioext-io_ext/userspace/io/build/loader_arb_feedback
+      cgroup_policies:
+      - name: ta_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_static_ta
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '0'
+        - -W
+        - '400'
+      - name: tb_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_static_tb
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+      - name: tc_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_static_tc
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '2'
+        - -W
+        - '200'
+      - name: td_q_fifo
+        path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+        policy_cgroup_path: /sys/fs/cgroup/rdyn_valid_s3_static_td
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+        - -p
+        - '5'
+        - -W
+        - '100'
+test_sequences:
+- sequence_id: DYN_valid_smoke_ab
+  name: 'validation phase-0 smoke: A+B L=15s, switch_native/attach/detach + swap_q both directions at
+    owner_token_timeout=10s'
+  io_ext_policy: native
+  steps:
+  - name: DYN_valid_smoke_ab four phases
+    scenes:
+    - ib_rdyn_valid_smoke_ab
+    duration: 120
+- sequence_id: DYN_valid_s1_dynamic
+  name: 'validation seed 1 (base 20261113): frozen schedule kyber->none->f1_arbfb->kyber executed for
+    real (allow_transition_exec, 3 transitions, tenant fio never restarted)'
+  io_ext_policy: native
+  steps:
+  - name: DYN_valid_s1_dynamic six phases with transitions
+    scenes:
+    - ib_rdyn_valid_s1_dynamic
+    duration: 600
+- sequence_id: DYN_valid_s1_static
+  name: 'validation seed 1 (base 20261113): best-static f1_arbfb for the whole trajectory (paired comparison
+    arm)'
+  io_ext_policy: F_valid_s1_arbfb
+  steps:
+  - name: DYN_valid_s1_static six phases
+    scenes:
+    - ib_rdyn_valid_s1_static
+    duration: 600
+- sequence_id: DYN_valid_s2_dynamic
+  name: 'validation seed 2 (base 20261123): frozen schedule kyber->none->f1_arbfb->kyber executed for
+    real (allow_transition_exec, 3 transitions, tenant fio never restarted)'
+  io_ext_policy: native
+  steps:
+  - name: DYN_valid_s2_dynamic six phases with transitions
+    scenes:
+    - ib_rdyn_valid_s2_dynamic
+    duration: 600
+- sequence_id: DYN_valid_s2_static
+  name: 'validation seed 2 (base 20261123): best-static f1_arbfb for the whole trajectory (paired comparison
+    arm)'
+  io_ext_policy: F_valid_s2_arbfb
+  steps:
+  - name: DYN_valid_s2_static six phases
+    scenes:
+    - ib_rdyn_valid_s2_static
+    duration: 600
+- sequence_id: DYN_valid_s3_dynamic
+  name: 'validation seed 3 (base 20261133): frozen schedule kyber->none->f1_arbfb->kyber executed for
+    real (allow_transition_exec, 3 transitions, tenant fio never restarted)'
+  io_ext_policy: native
+  steps:
+  - name: DYN_valid_s3_dynamic six phases with transitions
+    scenes:
+    - ib_rdyn_valid_s3_dynamic
+    duration: 600
+- sequence_id: DYN_valid_s3_static
+  name: 'validation seed 3 (base 20261133): best-static f1_arbfb for the whole trajectory (paired comparison
+    arm)'
+  io_ext_policy: F_valid_s3_arbfb
+  steps:
+  - name: DYN_valid_s3_static six phases
+    scenes:
+    - ib_rdyn_valid_s3_static
+    duration: 600
+default_sequence: DYN_valid_smoke_ab

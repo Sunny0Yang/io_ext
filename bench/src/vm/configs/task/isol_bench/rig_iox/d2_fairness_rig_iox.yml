@@ -1,0 +1,1140 @@
+benchmark_name: isol_bench rig D2 iox fairness (kvmhost/sdb)
+description: 'Rig D2 iox: saturated weighted cg=8, 8 policies.'
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_iox/d2/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_iox/d2/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_iox/d2/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_iox/d2/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/rig_iox/d2/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  iox_q_fifo:
+    name: rig iox q_fifo
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: &id001
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_fifo_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_wedf:
+    name: rig iox q_wedf per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: d2_tenants
+      name_template: q_wedf_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_wedf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+  iox_arb_wdrr:
+    name: rig iox arb_wdrr + fifo per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '300'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '400'
+    - tenant_group: d2_w5
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '500'
+    - tenant_group: d2_w6
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '600'
+    - tenant_group: d2_w7
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '700'
+    - tenant_group: d2_w8
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '800'
+  iox_arb_slo:
+    name: rig iox arb_slo + fifo per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_slo
+        path: /opt/io-ext/userspace/loader_arb_slo
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '300'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '400'
+    - tenant_group: d2_w5
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '500'
+    - tenant_group: d2_w6
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '600'
+    - tenant_group: d2_w7
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '700'
+    - tenant_group: d2_w8
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '800'
+  iox_arb_cost:
+    name: rig iox arb_cost + fifo per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_cost
+        path: /opt/io-ext/userspace/loader_arb_cost
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '300'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '400'
+    - tenant_group: d2_w5
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '500'
+    - tenant_group: d2_w6
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '600'
+    - tenant_group: d2_w7
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '700'
+    - tenant_group: d2_w8
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '800'
+  iox_arb_mix:
+    name: rig iox arb_mix + fifo per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_mix
+        path: /opt/io-ext/userspace/loader_arb_mix
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '300'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '400'
+    - tenant_group: d2_w5
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '500'
+    - tenant_group: d2_w6
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '600'
+    - tenant_group: d2_w7
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '700'
+    - tenant_group: d2_w8
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '800'
+  iox_arb_sp:
+    name: rig iox arb_sp + fifo per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_sp
+        path: /opt/io-ext/userspace/loader_arb_sp
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '7'
+      - -W
+      - '100'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '6'
+      - -W
+      - '200'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '5'
+      - -W
+      - '300'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '4'
+      - -W
+      - '400'
+    - tenant_group: d2_w5
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '3'
+      - -W
+      - '500'
+    - tenant_group: d2_w6
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '2'
+      - -W
+      - '600'
+    - tenant_group: d2_w7
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '1'
+      - -W
+      - '700'
+    - tenant_group: d2_w8
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '0'
+      - -W
+      - '800'
+  iox_arb_noop:
+    name: rig iox arb_noop + fifo per-cgroup
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_noop
+        path: /opt/io-ext/userspace/loader_arb_noop
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d2_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '100'
+    - tenant_group: d2_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '200'
+    - tenant_group: d2_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '300'
+    - tenant_group: d2_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '400'
+    - tenant_group: d2_w5
+      name_template: q_fifo_w5
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '500'
+    - tenant_group: d2_w6
+      name_template: q_fifo_w6
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '600'
+    - tenant_group: d2_w7
+      name_template: q_fifo_w7
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '700'
+    - tenant_group: d2_w8
+      name_template: q_fifo_w8
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -W
+      - '800'
+tenant_groups:
+  d2_tenants:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w_ncg8_cg{idx1}
+    collapsed_scene_id: ib_rig_d2_sat_w_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_ncg8
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w_ncg8_cg{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w1:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w1_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w1_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w1
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w1_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w2:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w2_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w2_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w2
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w2_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w3:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w3_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w3_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w3
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w3_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w4:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w4_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w4_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w4
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w4_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w5:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w5_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w5_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w5
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w5_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w6:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w6_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w6_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w6
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w6_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w7:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w7_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w7_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w7
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w7_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d2_w8:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_sat_w8_ncg8
+    collapsed_scene_id: ib_rig_d2_sat_w8_ncg8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d2/saturated_weighted_w8
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_sat_w8_ncg8
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: D2_saturated_weighted_iox_q_fifo_cg8_iter1
+  name: D2 saturated weighted iox q_fifo cg=8
+  io_ext_policy: iox_q_fifo
+  steps:
+  - name: saturated weighted cg=8 iox q_fifo
+    tenant_groups:
+    - d2_tenants
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_iox_q_wedf_cg8_iter1
+  name: D2 saturated weighted iox q_wedf cg=8
+  io_ext_policy: iox_q_wedf
+  steps:
+  - name: saturated weighted cg=8 iox q_wedf
+    tenant_groups:
+    - d2_tenants
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_iox_arb_wdrr_cg8_iter1
+  name: D2 saturated weighted iox arb_wdrr cg=8
+  io_ext_policy: iox_arb_wdrr
+  steps:
+  - name: saturated weighted cg=8 iox arb_wdrr
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    - d2_w5
+    - d2_w6
+    - d2_w7
+    - d2_w8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_arb_slo_cg8_iter1
+  name: D2 saturated weighted iox arb_slo cg=8
+  io_ext_policy: iox_arb_slo
+  steps:
+  - name: saturated weighted cg=8 iox arb_slo
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    - d2_w5
+    - d2_w6
+    - d2_w7
+    - d2_w8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_arb_cost_cg8_iter1
+  name: D2 saturated weighted iox arb_cost cg=8
+  io_ext_policy: iox_arb_cost
+  steps:
+  - name: saturated weighted cg=8 iox arb_cost
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    - d2_w5
+    - d2_w6
+    - d2_w7
+    - d2_w8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_arb_mix_cg8_iter1
+  name: D2 saturated weighted iox arb_mix cg=8
+  io_ext_policy: iox_arb_mix
+  steps:
+  - name: saturated weighted cg=8 iox arb_mix
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    - d2_w5
+    - d2_w6
+    - d2_w7
+    - d2_w8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_arb_sp_cg8_iter1
+  name: D2 saturated weighted iox arb_sp cg=8
+  io_ext_policy: iox_arb_sp
+  steps:
+  - name: saturated weighted cg=8 iox arb_sp
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    - d2_w5
+    - d2_w6
+    - d2_w7
+    - d2_w8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D2_saturated_weighted_iox_arb_noop_cg8_iter1
+  name: D2 saturated weighted iox arb_noop cg=8
+  io_ext_policy: iox_arb_noop
+  steps:
+  - name: saturated weighted cg=8 iox arb_noop
+    tenant_groups:
+    - d2_w1
+    - d2_w2
+    - d2_w3
+    - d2_w4
+    - d2_w5
+    - d2_w6
+    - d2_w7
+    - d2_w8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+default_sequence: D2_saturated_weighted_iox_q_fifo_cg8_iter1

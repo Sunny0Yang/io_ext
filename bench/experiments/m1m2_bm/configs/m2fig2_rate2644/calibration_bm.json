@@ -1,0 +1,62 @@
+{
+ "device": "nvme0n1",
+ "solo_mb_s": 3305,
+ "rate_mb_s": 2644.0,
+ "date": "2026-11-04",
+ "method": "min(0.8*solo) = 0.8*3305 = 2644 MiB/s (kvmhost method, no paper-1536 clip: 3*1536=1.39x device parallel headroom gave only 26% contention drop vs kvmhost 48%)",
+ "solo_probe": {
+  "file": "/opt/ioext/m2fig2/probe/solo_data",
+  "file_size_bytes": 34359738368,
+  "workload": "fio 64k randread QD8 direct=1 time_based (preallocated 32G file)",
+  "measured_mb_s": 3305,
+  "retention": "keep forever; this file is the calibration evidence and must NOT be deleted",
+  "source": "experiments/m1m2_bm/LEDGER.md section 5 (2026-11-04 solo probe)"
+ },
+ "rate_rule": "rate = min(1536, round(0.8 * solo 64KiB/QD8 direct randread MiB/s)); 0.8*solo = 2644 MiB/s -> truncated to the paper cap 1536 MiB/s (same truncation value as the kvmhost pipeline)",
+ "rate_mib_s": 2644.0,
+ "solo_mib_s": 3305,
+ "fio_rate_option": "1536M",
+ "io_max_mib_s": [
+  1500,
+  500,
+  500
+ ],
+ "io_max_bytes": [
+  1572864000,
+  524288000,
+  524288000
+ ],
+ "io_max_rule": "paper 1500/500/500 MiB/s scaled by rate/1536 (cap==paper cap, so unscaled)",
+ "device_major_minor_probed": "259:0",
+ "device_major_minor_note": "obtained at run time by the runner from /sys/block/nvme0n1/dev (bare-metal coreutils stat lacks %H:%L); root fs is /dev/nvme0n1p2 (259:2) on the same queue, verified empirically by the runner's io.max smoke",
+ "iocost_model": {
+  "ctrl": "user",
+  "model": "linear",
+  "rbps": 3465543680,
+  "rseqiops": 846080,
+  "rrandiops": 52880,
+  "wbps": 3465543680,
+  "wseqiops": 846080,
+  "wrandiops": 52880
+ },
+ "iocost_model_source": "derived_linear_from_solo_64K (kvmhost deviation 2: same-workload-scale linear model from the solo 64K/QD8 probe; 4K-based iocost_coef_gen model is work-conserving for 64K QD8 streams and was not used)",
+ "iocost_qos": {
+  "enable": true,
+  "ctrl": "user",
+  "rpct": 95.0,
+  "rlat": 20000,
+  "wpct": 95.0,
+  "wlat": 20000,
+  "min": 50.0,
+  "max": 150.0
+ },
+ "iocost_qos_source": "kernel-doc example magnitudes, identical to the kvmhost m2_fig2 pipeline (paper does not publish exact qos parameters)",
+ "recalibrate": false,
+ "environment": {
+  "host": "bm",
+  "kernel": "7.3.1-ioext2",
+  "fio": "3.41",
+  "target_mode": "preallocated 32G file + fio direct=1 on root fs (LEDGER decision 1; no mkfs, no raw-device access)"
+ },
+ "note": "parameter-strength variant; rate1536 run archived under runs/m2fig2/m2fig2_bm_20261105"
+}

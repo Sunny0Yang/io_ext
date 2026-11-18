@@ -1,0 +1,21 @@
+{
+  "name": "mqdd_lane_rw_5",
+  "tier": 2,
+  "match": "partial",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "read/write lane isolation + read batching: BE_READ lane drains before BE_WRITE",
+  "expected_dispatch_order": [
+    {"sector": 2560, "op": "read", "nr_sectors": 8},
+    {"sector": 3072, "op": "read", "nr_sectors": 8},
+    {"sector": 3584, "op": "read", "nr_sectors": 8},
+    {"sector": 2816, "op": "write", "nr_sectors": 8},
+    {"sector": 3328, "op": "write", "nr_sectors": 8}
+  ],
+  "partial_constraints": [
+    {"lane": "read", "sectors_monotonic": true, "all_sectors_present": [2560, 3072, 3584]},
+    {"lane": "write", "sectors_monotonic": true, "all_sectors_present": [2816, 3328]},
+    {"all_sectors_in_lane_before_other_lane": {"first": "read", "second": "write"}}
+  ],
+  "expected_merge": false,
+  "notes": "Phase-3 re-spaced sectors (above the partition-scan zone; previously 0..32 with 50% bg contamination — insert_count=11 vs trace 5). async_batch 5 mixed. BE_READ and BE_WRITE separate lanes. Batching<16 drains reads first (R2560,R3072,R3584 ascending C-LOOK), then writes (W2816,W3328). Partial: dispatch order — each lane ascending, all reads dispatched before any write."
+}

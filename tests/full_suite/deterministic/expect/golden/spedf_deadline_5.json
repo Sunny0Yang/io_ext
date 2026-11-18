@@ -1,0 +1,16 @@
+{
+  "name": "spedf_deadline_5",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation (tests/io/q_sp_edf_model.py scenario s1_deadline_5)",
+  "oracle_ref": "q_sp_edf.bpf.c:59-66 lane=SMALL_READ; :11 deadline=arrival+1ms; :212 deadline assigned at insert; :86-95 lane sorted (deadline ASC, sector ASC); arrival=bpf_ktime_get_ns at insert (ioext_bpf_common.h:201). Distinct arrivals -> within-lane EDF == arrival FIFO == submission order (submitted DESC 103424..102400). NOT C-LOOK ascending (mq-deadline would issue 102400..103424). Assertions on dispatch ISSUE order only.",
+  "expected_dispatch_order": [
+    {"sector": 103424, "op": "read", "nr_sectors": 8},
+    {"sector": 103168, "op": "read", "nr_sectors": 8},
+    {"sector": 102912, "op": "read", "nr_sectors": 8},
+    {"sector": 102656, "op": "read", "nr_sectors": 8},
+    {"sector": 102400, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "Phase-0 strict standard: async_batch (one 5-request io_uring batch), G1 max_inflight>=2 via check_inflight.py, exact ISSUE-order assertion. Sectors 256-apart (non-adjacent) because q_sp_edf has no merge hook and scx_io_allow_merge defaults to true (iosched_ext.c:3569). TIE PROBE CASE: if the kernel assigns EQUAL arrival_ns to consecutive inserts, bpf.c:89-91 falls back to sector ASC (102400 first) and this exact golden legitimately FAILs; the finding must be recorded and this golden downgraded to partial all_sectors_present (see mission S1). Stable across >=5 attempts = distinct-arrival behavior confirmed."
+}

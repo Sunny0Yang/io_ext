@@ -1,0 +1,299 @@
+# rig_ycsb q_db follow-up: q_db vs none vs q_ddl (virtme-ng local test)
+#
+# Purpose: D5-YCSB §3 targeted-policy validation. q_db = two-lane
+# size-threshold FIFO (F: <=64KB reads+writes strict priority; B: >64KB
+# bulk with 10ms/32-F anti-starvation). 3 arms x 2 workloads = 6 fresh
+# sequences under conditions identical to ycsb_global_vng.yml (same
+# scale, same scene, same monitoring); the 8-arm baseline for wider
+# context is results/isol_bench/rig_ycsb/ycsb_global_matrix.csv.
+#
+# Design discipline (unchanged from ycsb_global_vng.yml):
+#   - single real DB workload per sequence (one YCSB process, one cgroup)
+#   - NO cgroup io controller values written
+#   - fixed workload cgroup /sys/fs/cgroup/ycsb_rig for accounting only
+#   - no arbiter; iox arms attach one root_policy loader at the cgroup v2 root
+#
+# Arms: none (native) / q_db (scx_io + loader_q_db) / q_ddl (scx_io +
+# loader_q_ddl, the best p99 policy from the D5 matrix).
+#
+# Workloads: a (50% read / 50% update)  = anti-starvation safety gate
+#            c (100% read + background debt) = p99 improvement target
+benchmark_name: "rig_ycsb q_db targeted-policy A/B (vng local)"
+description: >-
+  Global single-tenant YCSB/RocksDB load: 3 scheduler arms (native none +
+  scx_io q_db + scx_io q_ddl root-policy loaders) x 2 YCSB workloads
+  (a=read/update, c=read-only), direct-I/O RocksDB on the 10G vng nvme
+  test disk, one fixed accounting cgroup, zero io controller writes.
+  q_db classifies purely by request size: <=64KB (128 sectors) reads AND
+  writes take the strict-priority fast lane, >64KB bulk writes take a
+  FIFO slow lane with 10ms/32-dispatch anti-starvation.
+default_sequence: "YCSB_qdb_qdb_a"
+
+# Common YCSB run-scale knobs; per-arm templates merge `<<: *common_workload`
+# inside ycsb_workload and add workload_type. Explicit keys here MUST stay
+# complete because base-scene defaults (recordcount=1000 etc.) are only
+# overridden by keys actually present in the task-level mapping.
+_common_workload: &common_workload
+  recordcount: 400000              # ~4GB logical (10 x 1024B fields); MUST match
+                                   # ycsb_global_vng.yml for matrix comparability
+  operationcount: 10000000        # ceiling; maxexecutiontime bounds the run phase
+  threads: 16
+  jvm_args: "-Xms2048m -Xmx2048m"
+  properties:
+    fieldcount: 10
+    fieldlength: 1024
+    maxexecutiontime: 150          # run phase ~150s regardless of ops rate
+
+_common_ycsb_params: &common_ycsb
+  target_device: "nvme0n1"          # vng VM always exposes the QEMU nvme disk as nvme0n1
+  output_dir: "./test_results/isol_bench/rig_ycsb/{group_id}"
+  duration: 2100                     # scene-level bound (informational); real bound is step duration
+  drop_caches_before_run: false      # direct-I/O RocksDB: page cache irrelevant for data files
+  database:
+    db_type: "rocksdb"
+    data_dir: "/tmp/nvme_data/{group_id}_tenant_{idx1}"   # /tmp/nvme_data = target disk mount point
+    ycsb_dir: "src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: true              # scene emits options file: O_DIRECT reads + flush/compaction
+    write_buffer_size: 67108864      # 64MB memtable: identical flush cadence to the matrix runs
+    storage_backend: "kernel_block"
+  system:
+    mem_limit_mb: 0                  # no memory cgroup limiting
+    auto_format_disk: true
+    format_device: true              # fresh ext4 on the 10G test disk every sequence
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/ycsb_rig"   # fixed accounting-only cgroup; no io.* values written
+
+_native_scene_io_ext: &native_scene_io_ext
+  cleanup_stale_when_no_specs: true  # no loaders of our own; sweep leftovers from crashed sequences
+  cleanup_bpffs_pins: true
+
+_iox_scene_io_ext: &iox_scene_io_ext
+  cleanup_stale: false               # global loader scene owns the loader chain for the sequence
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      output_dir: "./test_results/isol_bench/rig_ycsb/system_metric"
+  ib_block_io_latency_cost:
+    base_scene: "scene/block_bpf/block_io_latency_cost.yml"
+    parameters:
+      output_dir: "./test_results/isol_bench/rig_ycsb/block_io_latency_cost"
+      output_file: "./test_results/isol_bench/rig_ycsb/block_io_latency_cost/block_io_latency_cost.bpftrace.log"
+      summary_file: "./test_results/isol_bench/rig_ycsb/block_io_latency_cost/block_io_latency_cost_summary.json"
+      require_events: false
+      privilege:
+        method: "sudo_nopasswd"
+        askpass_script: ""
+
+io_ext_policy_profiles:
+  arm_none:
+    name: "rig ycsb qdb-rig native none"
+    target_device: "nvme0n1"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_iox_q_db:
+    name: "rig ycsb qdb-rig iox q_db"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_db_root"
+        path: "/opt/io-ext/userspace/loader_q_db"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_q_ddl:
+    name: "rig ycsb qdb-rig iox q_ddl"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_ddl_root"
+        path: "/opt/io-ext/userspace/loader_q_ddl"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+
+tenant_groups:
+  # ---------- workloada arms: 50% read / 50% update (safety gate) ----------
+  ycsb_qdb_qdb_a:
+    count: 1
+    scene_id_template: "ycsb_qdb_qdb_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_qdb_none_a:
+    count: 1
+    scene_id_template: "ycsb_qdb_none_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  ycsb_qdb_qddl_a:
+    count: 1
+    scene_id_template: "ycsb_qdb_qddl_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "a"
+  # ---------- workloadc arms: 100% read + background debt (p99 target) ----------
+  ycsb_qdb_qdb_c:
+    count: 1
+    scene_id_template: "ycsb_qdb_qdb_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_qdb_none_c:
+    count: 1
+    scene_id_template: "ycsb_qdb_none_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+  ycsb_qdb_qddl_c:
+    count: 1
+    scene_id_template: "ycsb_qdb_qddl_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload:
+          <<: *common_workload
+          workload_type: "c"
+
+test_sequences:
+- sequence_id: "YCSB_qdb_qdb_a"
+  name: "workloada iox scx_io q_db (target arm)"
+  io_ext_policy: "arm_iox_q_db"
+  steps:
+  - name: "workloada iox q_db"
+    tenant_groups:
+    - "ycsb_qdb_qdb_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_qdb_none_a"
+  name: "workloada native none (same-round control)"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "workloada none"
+    tenant_groups:
+    - "ycsb_qdb_none_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_qdb_qddl_a"
+  name: "workloada iox scx_io q_ddl (best-p99 control)"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "workloada iox q_ddl"
+    tenant_groups:
+    - "ycsb_qdb_qddl_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_qdb_qdb_c"
+  name: "workloadc iox scx_io q_db (target arm)"
+  io_ext_policy: "arm_iox_q_db"
+  steps:
+  - name: "workloadc iox q_db"
+    tenant_groups:
+    - "ycsb_qdb_qdb_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_qdb_none_c"
+  name: "workloadc native none (same-round control)"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "workloadc none"
+    tenant_groups:
+    - "ycsb_qdb_none_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100
+- sequence_id: "YCSB_qdb_qddl_c"
+  name: "workloadc iox scx_io q_ddl (best-p99 control)"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "workloadc iox q_ddl"
+    tenant_groups:
+    - "ycsb_qdb_qddl_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 2100

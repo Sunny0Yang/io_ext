@@ -1,0 +1,29 @@
+# =========================================================================
+# experiments/reproduction / kyber / fio_none_be.fio
+# 实验2 kyber：none 臂 BE 侧。BE 持续饱和 90s 不间断（[PLAN] kyber 固定项 +
+# [MSC] 90s step 协议覆盖窗口；BE seqwrite QD16 [MSC] coloc BE 口径）。
+# 128k seqwrite 未限速（BE 持续饱和是 kyber 深度反馈的驱动条件）。
+# 文件 /data/be.bin（[MSC] coloc BE 用 be.bin）；direct=1。
+# 日志命名：io_weight_native_be
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/be.bin
+
+[be]
+rw=write
+bs=128k
+iodepth=16
+runtime=90
+randseed=2026111499
+write_lat_log=io_weight_native_be
+write_bw_log=io_weight_native_be
+write_iops_log=io_weight_native_be

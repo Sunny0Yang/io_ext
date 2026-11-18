@@ -1,0 +1,10 @@
+name: "Web浏览场景"
+id: "web_browsing"
+type: "interactive"
+class_name: "WebBrowsingScene"
+module_path: "src.vm.scene.interactive.web_browsing"
+parameters:
+  local_test_mode: true # if false, add remote test url
+  headless: false
+  test_pages_dir: "src/vm/assets/interactive/web_browsing"
+  output_dir: "./test_results"

@@ -1,0 +1,40 @@
+name: "io-ext TailBench Shore smoke"
+id: "ioext_tailbench_shore_workload"
+type: "io_ext"
+class_name: "IoExtTailbenchShoreScene"
+module_path: "vm.scene.io_ext.tailbench_shore"
+parameters:
+  output_dir: "./test_results/io_ext/tailbench_shore"
+  duration: 180
+  # true 时在 run 前 sync + /proc/sys/vm/drop_caches=3（与 ycsb_rocksdb.py 相同的
+  # drop 纪律）：让 cache 命中来自 Shore 自身 buffer pool 而非上次 run 残留页缓存。
+  drop_caches_before_run: false
+  tailbench:
+    mode: "shore_bench"  # 明确运行 assets/tailbench/shore/shore_bench.py；不做 auto 探测，也不回退 fixture。
+    home: "src/vm/assets/tailbench"
+    working_dir: "src/vm/assets/tailbench/shore"
+    build_script: null
+    run_build: false
+    run_script: null
+    run_args: []
+    bench_script: "src/vm/assets/tailbench/shore/shore_bench.py"
+    binary: "src/vm/assets/tailbench/shore/shore_kits_integrated"  # 真实 upstream Shore 集成二进制可放在 assets 下；默认 smoke 不调用它。
+    data_file: "src/vm/assets/tailbench/shore/db-tpcc-1.smoke"  # 小型 smoke 输入；真实 db-tpcc-1 很大，按 README 放置或显式覆盖。
+    scratch_dir: "./test_results/io_ext/tailbench_shore/scratch"
+    command: null
+    require_latency: true  # 没有 p99/p95/p50 延迟数据则失败，避免只看 returncode 的假阳性。
+    latency_unit: "us"  # 文本 lats*.txt 视为微秒；TailBench lats*.bin 会按 uint64 ns 自动转成 us。
+    binary_latency_format: "triplet"  # shore_bench 与 TailBench lats.bin 均写 queue/service/sojourn 三元组；二元组文件请显式改成 pair。
+    env:
+      TBENCH_CLIENT_THREADS: "1"
+      TBENCH_QPS: "1"
+      TBENCH_MAXREQS: "100"
+      TBENCH_WARMUPREQS: "10"
+      TBENCH_MINSLEEPNS: "10000"
+    latency_globs:
+      - "lats*.txt"
+      - "**/lats*.txt"
+    binary_latency_globs:
+      - "lats*.bin"
+      - "**/lats*.bin"
+    p99_threshold_us: 50000

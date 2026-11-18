@@ -1,0 +1,63 @@
+#!/usr/bin/env bpftrace
+/*
+ * Priority inversion detector for block IO (q_prio / arb_sp workloads).
+ *
+ * Tracks high-priority (RT / high ioprio class) inserts and flags dispatches that
+ * occur while high-priority work may still be queued.
+ */
+
+#define IOPRIO_CLASS_SHIFT 13
+#define IOPRIO_CLASS_RT    1
+
+BEGIN
+{
+  printf("PRIO_INVERSION_START\n");
+  printf("targets=block_rq_insert,scx_io_dispatch_request\n");
+  printf("event_format=PRIO_INVERSION_EVENT ts_ns=<nsecs> high_pending=<n> dispatch_seq=<n>\n\n");
+}
+
+tracepoint:block:block_rq_insert
+{
+  $ioprio = args->ioprio;
+  $class = $ioprio >> IOPRIO_CLASS_SHIFT;
+  if ($class == IOPRIO_CLASS_RT || $class == 2) {
+    @high_pending++;
+    @high_insert_count++;
+  } else {
+    @low_insert_count++;
+  }
+}
+
+kprobe:scx_io_dispatch_request
+{
+  @dispatch_seq++;
+  if (@high_pending > 0) {
+    @prio_inversion_count++;
+    printf("PRIO_INVERSION_EVENT ts_ns=%llu high_pending=%llu dispatch_seq=%llu\n",
+      nsecs, @high_pending, @dispatch_seq);
+    if (@high_pending > 0)
+      @high_pending--;
+  }
+}
+
+tracepoint:block:block_rq_complete
+{
+  if (@high_pending > 0)
+    @high_pending--;
+}
+
+interval:s:10
+{
+  printf("PRIO_SAMPLE ts_ns=%llu high_pending=%llu inversions=%llu high_ins=%llu low_ins=%llu\n",
+    nsecs, @high_pending, @prio_inversion_count, @high_insert_count, @low_insert_count);
+}
+
+END
+{
+  printf("\nPRIO_INVERSION_SUMMARY_BEGIN\n");
+  print(@prio_inversion_count);
+  print(@high_insert_count);
+  print(@low_insert_count);
+  print(@high_pending);
+  printf("PRIO_INVERSION_SUMMARY_END\n");
+}

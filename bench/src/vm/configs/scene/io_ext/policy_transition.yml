@@ -1,0 +1,36 @@
+name: "io-ext policy hot transition template"
+id: "ioext_policy_transition"
+type: "io_ext"
+class_name: "IoExtPolicyTransitionScene"
+module_path: "vm.scene.io_ext.policy_transition"
+parameters:
+  target_device: "nvme0n1"
+  native_scheduler: "none"
+  scx_scheduler: "scx_io"
+  final_scheduler: "none"
+  output_dir: "./test_results/io_ext/policy_transition"
+  root_cgroup:
+    path: "/sys/fs/cgroup"
+    controllers: ["io"]
+  cleanup_stale_on_prepare: true
+  cleanup_bpffs_on_prepare: true
+  poll_interval_sec: 0.1
+  policy_profiles:
+    q_none:
+      io_ext:
+        root_policies:
+          - name: "q_none_root"
+            path: "$IOEXT_WORKSPACE/userspace/loader_q_none"
+            scope: "root_policy"
+            args: ["{policy_cgroup_path}"]
+  phases:
+    - name: "native_none_baseline"
+      action: "native"
+      duration_sec: 5
+    - name: "attach_q_none"
+      action: "attach"
+      policy: "q_none"
+      duration_sec: 5
+    - name: "detach_to_native_none"
+      action: "detach"
+      duration_sec: 5

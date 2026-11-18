@@ -1,0 +1,16 @@
+{
+  "name": "spedf_tie_prio_5",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation (tests/io/q_sp_edf_model.py scenario s3_tie_prio_5)",
+  "oracle_ref": "q_sp_edf.bpf.c:133-135 SMALL_READ drains before SMALL_WRITE while both non-empty (fixed lane priority; cross-lane EDF does not exist); :59-66 writes -> SMALL_WRITE lane; ioprio ignored by sp_edf (no prio logic anywhere in q_sp_edf.bpf.c); within-lane arrival FIFO. Submission W101888,R102400,W102144,R102912,R103424 -> ISSUE R102400,R102912,R103424,W101888,W102144.",
+  "expected_dispatch_order": [
+    {"sector": 102400, "op": "read", "nr_sectors": 8},
+    {"sector": 102912, "op": "read", "nr_sectors": 8},
+    {"sector": 103424, "op": "read", "nr_sectors": 8},
+    {"sector": 101888, "op": "write", "nr_sectors": 8},
+    {"sector": 102144, "op": "write", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "Phase-0 strict standard: async_batch, exact ISSUE-order assertion. Historical intent preserved: BE prio decorations 0..7 in the trace are ignored (sp_edf is lane-based); equal-deadline ties fall back to sector ASC (bpf.c:89-91) and within-lane submission order == sector ASC, so this golden is robust to arrival ties. Strong scheduler-engagement proof: a write submitted FIRST issues 4th — a passthrough/direct-issue path would have issued it first."
+}

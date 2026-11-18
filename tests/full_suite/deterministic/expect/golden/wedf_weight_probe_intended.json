@@ -1,0 +1,19 @@
+{
+  "name": "wedf_weight_probe_intended",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation_intended",
+  "oracle_ref": "INTENDED weighted-EDF semantics (NOT implemented — BLOCKED-weight): dl = arrival + Q_WEDF_READ_DEADLINE_NS / weight. With weights 1:3 (w1 class sectors 64-256, w3 class sectors 320-512), w3 deadlines (~arrival+16.7ms) precede w1 deadlines (~arrival+50ms) by ~33ms >> 5ms window -> strict EDF: all w3 reads before all w1 reads; sector-ascending within each class. Derived by tests/io/q_wedf_model.py --divergence (intended mode).",
+  "expected_dispatch_order": [
+    {"sector": 320, "op": "read", "nr_sectors": 8},
+    {"sector": 384, "op": "read", "nr_sectors": 8},
+    {"sector": 448, "op": "read", "nr_sectors": 8},
+    {"sector": 512, "op": "read", "nr_sectors": 8},
+    {"sector": 64, "op": "read", "nr_sectors": 8},
+    {"sector": 128, "op": "read", "nr_sectors": 8},
+    {"sector": 192, "op": "read", "nr_sectors": 8},
+    {"sector": 256, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "BLOCKED-weight — DO NOT REGISTER as a live DT case until the weight input path exists (EVOLUTION_PLAN.md §8 row 5.4; Test_Design_IOExt.md ~343-348 planned q_wedf-DT-01/02, ~371-378 known-issue analysis). This golden documents what the weighted order WOULD be. The CURRENT policy (weight ignored) would dispatch the same trace purely sector-ascending: 64,128,192,256,320,384,448,512 — the divergence is the measured proof of the KNOWN gap. Prerequisites to unblock: (1) trace_driver parses a per-request/cgroup weight; (2) loader_q_wedf gains a weight knob writing a BPF map/rodata; (3) iosched_build_desc or the q_wedf hook populates desc.weight; (4) wedf_base_deadline_ns consumes desc.weight."
+}

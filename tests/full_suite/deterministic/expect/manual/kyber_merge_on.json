@@ -1,0 +1,11 @@
+{
+  "name": "kyber_merge_on_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 8,
+    "complete_count_min": 8,
+    "merge_coverage_min": 64
+  },
+  "notes": "q_kyber Tier-1, --merge-enable=1, sync-mode trace (adjacent_read_8, delay_us=300: 1-in-flight, no plug merges either way). Phase-2 rewrite: the original insert_count_min:1 was dead — block_rq_insert never fired under scx_io until the Phase-2 kernel fix (block/iosched_ext.c scx_io_insert_requests now emits trace_block_rq_insert per request). 8 sync reads -> 8 INSERTs / 8 ISSUEs (nr=8 each) / 8 completes; coverage 8x8=64. Sector range 0..56 collides with partition-scan background IO (sectors 0/32), so min/coverage thresholds only — never eq/lt here. NOTE (Phase-1 finding): --merge-enable is config-only on this kernel (q_kyber has no bio_merge hook; plug merges bypass allow_merge) — the on/off pair verifies config plumbing (kyber_merge_cfg pinned map, asserted via bpftool in tests/io/q_kyber_accept.sh) plus insert/counting invariants, not merge behavior."
+}

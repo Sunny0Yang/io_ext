@@ -1,0 +1,464 @@
+# rig_m1_cache: P0-2 main config -- native scheduler x real-app matrix under the
+# SAME cache=on caliber as m1_cache_on.yml (kvmhost sdb; runner formats+mounts
+# /mnt/m1_cache_20261031 per case).
+#
+# Native scheduler switching mechanism: identical to rig_ycsb/ycsb_global_vng.yml
+# -- per-arm tenant groups pin `scheduler` on the tenant scene parameters (each
+# scene re-asserts the device scheduler at run start), and each arm's
+# io_ext_policy profile additionally generates a global loader scene that pins
+# the scheduler before the steps run. (The historical m2 native comparison
+# switched schedulers inside the offline runner via
+# /sys/block/sdb/queue/scheduler; here the executor owns the switch so each
+# (scenario, scheduler) sequence is a first-class config unit.) Guest sdb
+# carries none/mq-deadline/kyber/bfq (verified in
+# results/motivation_io_behavior_20261029_1793274117/remote_runs/
+# m2_native_compare_20261030 campaign.json available_schedulers).
+#
+# Protocol (§0.2): repeats are NOT enumerated in this yml -- the runner runs
+# each sequence N times (case names <seq>_r<k>); target >= 3 repeats per cell,
+# or 1 probe first (--probe) then 3 confirming repeats. Cache=on attribution
+# discipline: drop_caches_before_run: true on every scene.
+#
+# NO iox arms here: m1_1/m1_2 figures are iox-free by design (§0.2 图规划).
+#
+# Result convention: results/motivation_io_behavior_20261029_1793274117/remote_runs/<RUN_ID>/
+# (runner: scripts/run_m1_cache_campaign.py --campaign m1matrix --repeats 3).
+benchmark_name: "rig_m1_cache native scheduler x real-app matrix, cache=on (kvmhost sdb)"
+description: >-
+  3 real-app scenarios (YCSB-A buffered, default 8 MiB block cache; db_bench
+  readwhilewriting buffered + explicit 32 MiB cache; Shore QPS50) x 4 native block
+  schedulers (none / kyber / mq-deadline / bfq) = 12 sequences. No cgroup
+  io.* controller values, no io_ext loader policy.
+default_sequence: "M1MATRIX_YCSB_A_NONE"
+fail_fast_on_scene_error: true
+
+_native_none_io_ext: &native_none_io_ext
+  cleanup_stale_when_no_specs: true
+  cleanup_bpffs_pins: true
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  output_dir: "/tmp/m1_cache_20261031/scene/{group_id}"
+  duration: 1100
+  drop_caches_before_run: true   # cache=on attribution discipline
+  database:
+    db_type: "rocksdb"
+    data_dir: "/mnt/m1_cache_20261031/ycsb_db"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: false
+    write_buffer_size: 67108864
+    # Block cache = bundled rocksdbjni default 8 MiB LRU (verified constant;
+    # explicit sizes are impossible with the bundled YCSB runtime -- see
+    # m1_cache_on.yml header and the ycsb_rocksdb.py guard).
+    storage_backend: "kernel_block"
+    environment:
+      JAVA_HOME: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  system:
+    mem_limit_mb: 0
+    auto_format_disk: true
+    format_device: false
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/m1_cache_ycsb"   # accounting only; no io.* values
+
+_common_dbbench: &common_dbbench
+  target_device: "sdb"
+  output_dir: "/tmp/m1_cache_20261031/scene/{group_id}"
+  duration: 900
+  drop_caches_before_run: true
+  dbbench:
+    dbbench_bin: "/tmp/m1_cache_20261031_bundle/rocksdb/db_bench"
+    rocksdb_home: "/tmp/m1_cache_20261031_bundle/rocksdb"
+    db_path: "/mnt/m1_cache_20261031/dbbench_db"
+    use_direct_io: false
+    common_args:
+      num: 1000000
+      value_size: 1024
+      key_size: 16
+      compression_type: "none"
+      bloom_bits: 10
+      cache_size: 33554432
+      write_buffer_size: 67108864
+  system:
+    auto_format_disk: true
+    format_device: false
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/m1_cache_dbb"   # accounting only; no io.* values
+
+_common_tailbench: &common_tailbench
+  home: "/tmp/m1_cache_20261031_bundle/tailbench/tailbench-v0.9"
+  working_dir: "/tmp/m1_cache_20261031_bundle/tailbench/tailbench-v0.9/shore"
+  bench_script: "/opt/ioext-bench/src/vm/assets/tailbench/shore/shore_bench.py"
+  binary: "/tmp/m1_cache_20261031_bundle/tailbench/tailbench-v0.9/shore/shore-kits/shore_kits_integrated"
+  run_build: false
+  scratch_dir: "/mnt/m1_cache_20261031/shore_scratch"
+  require_latency: true
+  latency_unit: "us"
+  binary_latency_format: "triplet"
+  p99_threshold_us: 50000
+  slo_deadline_us: 50000
+
+_shore_common_params: &shore_common_params
+  target_device: "sdb"
+  output_dir: "/tmp/m1_cache_20261031/scene/{group_id}"
+  duration: 1000
+  drop_caches_before_run: true
+  io_ext: *native_none_io_ext
+  tailbench:
+    <<: *common_tailbench
+    mode: "shore_integrated"
+    # Data file lives on the guest root disk (outside the reformatted sdb);
+    # Shore's own write traffic (diskrw) goes to scratch_dir on sdb.
+    data_file: "/tmp/m1_cache_20261031_bundle/data/db-tpcc-1"
+    env:
+      TBENCH_CLIENT_THREADS: "2"
+      TBENCH_QPS: "50"
+      TBENCH_WARMUPREQS: "1000"
+      TBENCH_MAXREQS: "30000"     # 30000/50 = 600s ROI
+      TBENCH_MINSLEEPNS: "10000"
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - "sdb"
+      output_dir: "/tmp/m1_cache_20261031/monitor/system_metric"
+
+io_ext_policy_profiles:
+  # Native arms only: scheduler pinned by the generated global loader scene
+  # (and re-asserted per tenant scene).
+  arm_none:
+    name: "m1 matrix native none"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext: *native_none_io_ext
+  arm_kyber:
+    name: "m1 matrix native kyber"
+    target_device: "sdb"
+    scheduler: "kyber"
+    io_ext: *native_none_io_ext
+  arm_mq_deadline:
+    name: "m1 matrix native mq-deadline"
+    target_device: "sdb"
+    scheduler: "mq-deadline"
+    io_ext: *native_none_io_ext
+  arm_bfq:
+    name: "m1 matrix native bfq"
+    target_device: "sdb"
+    scheduler: "bfq"
+    io_ext: *native_none_io_ext
+
+tenant_groups:
+  # ---------- YCSB workloada: one group per arm (scheduler on scene params) ----------
+  ycsb_a_none:
+    count: 1
+    scene_id_template: "m1matrix_ycsb_a_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_none_io_ext
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "a"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  ycsb_a_kyber:
+    count: 1
+    scene_id_template: "m1matrix_ycsb_a_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "kyber"
+        io_ext: *native_none_io_ext
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "a"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  ycsb_a_mq_deadline:
+    count: 1
+    scene_id_template: "m1matrix_ycsb_a_mq_deadline_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "mq-deadline"
+        io_ext: *native_none_io_ext
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "a"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  ycsb_a_bfq:
+    count: 1
+    scene_id_template: "m1matrix_ycsb_a_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "bfq"
+        io_ext: *native_none_io_ext
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "a"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  # ---------- db_bench readwhilewriting: one group per arm ----------
+  dbb_rww_none:
+    count: 1
+    scene_id_template: "m1matrix_dbb_rww_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "none"
+        io_ext: *native_none_io_ext
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle1"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readwhilewriting"
+          benchmark: "readwhilewriting"
+          duration: 150
+          args:
+            threads: 4
+            writes: 3000000
+  dbb_rww_kyber:
+    count: 1
+    scene_id_template: "m1matrix_dbb_rww_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "kyber"
+        io_ext: *native_none_io_ext
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle1"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readwhilewriting"
+          benchmark: "readwhilewriting"
+          duration: 150
+          args:
+            threads: 4
+            writes: 3000000
+  dbb_rww_mq_deadline:
+    count: 1
+    scene_id_template: "m1matrix_dbb_rww_mq_deadline_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "mq-deadline"
+        io_ext: *native_none_io_ext
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle1"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readwhilewriting"
+          benchmark: "readwhilewriting"
+          duration: 150
+          args:
+            threads: 4
+            writes: 3000000
+  dbb_rww_bfq:
+    count: 1
+    scene_id_template: "m1matrix_dbb_rww_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "bfq"
+        io_ext: *native_none_io_ext
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle1"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readwhilewriting"
+          benchmark: "readwhilewriting"
+          duration: 150
+          args:
+            threads: 4
+            writes: 3000000
+  # ---------- Shore QPS50: one group per arm ----------
+  shore_qps50_none:
+    count: 1
+    scene_id_template: "m1matrix_shore_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *shore_common_params
+        scheduler: "none"
+  shore_qps50_kyber:
+    count: 1
+    scene_id_template: "m1matrix_shore_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *shore_common_params
+        scheduler: "kyber"
+  shore_qps50_mq_deadline:
+    count: 1
+    scene_id_template: "m1matrix_shore_mq_deadline_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *shore_common_params
+        scheduler: "mq-deadline"
+  shore_qps50_bfq:
+    count: 1
+    scene_id_template: "m1matrix_shore_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *shore_common_params
+        scheduler: "bfq"
+
+test_sequences:
+# ---------- YCSB workloada x 4 schedulers ----------
+- sequence_id: "M1MATRIX_YCSB_A_NONE"
+  name: "matrix YCSB-A cache=on, native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "ycsb a none"
+    tenant_groups: ["ycsb_a_none"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1MATRIX_YCSB_A_KYBER"
+  name: "matrix YCSB-A cache=on, native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "ycsb a kyber"
+    tenant_groups: ["ycsb_a_kyber"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1MATRIX_YCSB_A_MQ_DEADLINE"
+  name: "matrix YCSB-A cache=on, native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "ycsb a mq-deadline"
+    tenant_groups: ["ycsb_a_mq_deadline"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1MATRIX_YCSB_A_BFQ"
+  name: "matrix YCSB-A cache=on, native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "ycsb a bfq"
+    tenant_groups: ["ycsb_a_bfq"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+# ---------- db_bench readwhilewriting x 4 schedulers ----------
+- sequence_id: "M1MATRIX_DBB_RWW_NONE"
+  name: "matrix db_bench rww cache=on, native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "dbbench rww none"
+    tenant_groups: ["dbb_rww_none"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "M1MATRIX_DBB_RWW_KYBER"
+  name: "matrix db_bench rww cache=on, native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "dbbench rww kyber"
+    tenant_groups: ["dbb_rww_kyber"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "M1MATRIX_DBB_RWW_MQ_DEADLINE"
+  name: "matrix db_bench rww cache=on, native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "dbbench rww mq-deadline"
+    tenant_groups: ["dbb_rww_mq_deadline"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "M1MATRIX_DBB_RWW_BFQ"
+  name: "matrix db_bench rww cache=on, native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "dbbench rww bfq"
+    tenant_groups: ["dbb_rww_bfq"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+# ---------- Shore QPS50 x 4 schedulers ----------
+- sequence_id: "M1MATRIX_SHORE_QPS50_NONE"
+  name: "matrix Shore QPS50 cache=on, native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "shore qps50 none"
+    tenant_groups: ["shore_qps50_none"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1000
+- sequence_id: "M1MATRIX_SHORE_QPS50_KYBER"
+  name: "matrix Shore QPS50 cache=on, native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "shore qps50 kyber"
+    tenant_groups: ["shore_qps50_kyber"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1000
+- sequence_id: "M1MATRIX_SHORE_QPS50_MQ_DEADLINE"
+  name: "matrix Shore QPS50 cache=on, native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "shore qps50 mq-deadline"
+    tenant_groups: ["shore_qps50_mq_deadline"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1000
+- sequence_id: "M1MATRIX_SHORE_QPS50_BFQ"
+  name: "matrix Shore QPS50 cache=on, native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "shore qps50 bfq"
+    tenant_groups: ["shore_qps50_bfq"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1000

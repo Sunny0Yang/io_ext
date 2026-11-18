@@ -1,0 +1,12 @@
+name: "视频渲染场景"
+id: "video_render"
+type: "batch"
+class_name: "VideoRenderScene"
+module_path: "src.vm.scene.batch.video_render"
+parameters:
+  source_video: "src/vm/assets/batch/video_render/test.mp4"
+  output_dir: "./test_results"
+  preset: "medium"  # FFmpeg x264预设
+  crf: 23  # 恒定质量因子
+  output_format: "mp4"  # 输出格式
+  iteration: 6  # 测试迭代次数

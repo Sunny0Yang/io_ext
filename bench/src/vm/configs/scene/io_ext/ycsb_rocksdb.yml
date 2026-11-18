@@ -1,0 +1,49 @@
+name: "io-ext YCSB RocksDB workload template"
+id: "ioext_ycsb_rocksdb_workload"
+type: "io_ext"
+class_name: "IoExtYcsbRocksdbScene"
+module_path: "vm.scene.io_ext.ycsb_rocksdb"
+parameters:
+  database:
+    db_type: "rocksdb"
+    data_dir: "/tmp/nvme_data/ioext_rocksdb_ycsb_smoke"
+    ycsb_dir: "src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: false  # 设为 true 时场景会生成 RocksDB options 文件，通过 O_DIRECT 访问 SST 文件。
+    storage_backend: "kernel_block"  # kernel_block/spdk_probe_only/spdk_real；spdk_probe_only 只记录 readiness，不伪造 SPDK I/O。
+    options_file: null  # 如需自定义 RocksDB options 文件，可填绝对路径；非空时优先使用该文件。
+    # 块缓存三档语义（写入生成的 options ini 的 block_based_table_factory）：
+    #   null  -> 不写 cache 行，用 RocksDB 默认开启（本 YCSB 运行时实测默认 8MiB LRU，见下）；
+    #   0     -> 显式关闭：block_based_table_factory={no_block_cache=true}；
+    #   >0    -> 显式开启：block_based_table_factory={block_cache=<字节数>}。
+    # 重要限制（2026-10-31 对随附 YCSB 运行时实测）：bundled rocksdbjni-6.2.2.jar 的
+    # 原生库无法在 options 文件中携带任何 table 选项——内联 block_based_table_factory={...}
+    # 一律解析失败，[TableOptions/:rocksdb.BlockBasedTable] 段解析通过但在 DB open 时 JVM
+    # 段错误崩溃；legacy ini（仅 DBOptions + CFOptions 标量）正常，block cache 实测默认
+    # 8MiB LRU（rocksdb.block-cache-capacity 探针）。因此非 null 的 block_cache_size 会
+    # fail-fast 拒绝，除非升级 YCSB rocksdbjni jar 后显式设 force_block_cache_ini: true。
+    block_cache_size: null
+    # 升级 YCSB rocksdbjni jar（>= 6.2.2 官方构建）后置 true 以放行 block_cache_size 写入 ini。
+    force_block_cache_ini: false
+  ycsb_workload:
+    # workload_type: 可用值 a / b / c / d / e / f，自动映射到 workloads/workloada ~ workloadf。
+    # workload_category: workload_type 的别名，二者选填其一即可。
+    # 若同时省略 workload_type/workload_category，则必须显式填写 workload_file。
+    workload_file: "workloads/workloada"
+    recordcount: 1000
+    operationcount: 1000
+    threads: 1
+    jvm_args: null  # 需要控制 JVM 堆大小时填字符串，例如 "-Xms256m -Xmx512m"。
+    properties: {}  # 额外 YCSB -p 参数，例如 fieldlength/fieldcount，用于放大 RocksDB 工作集。
+  system:
+    mem_limit_mb: 0  # >0 时写入 cgroup v2 memory.max；YCSB 子进程通过同一 cgroup 受限。
+    memory_swap_max_mb: null  # null 表示不改 memory.swap.max；"max" 表示允许使用系统 swap。
+    require_swap_activity: false  # true 时要求 memory.swap.current 或 pswpout 出现正向证据。
+    ensure_swapfile: false  # VM 临时盘上可开启；无系统 swap 时自动创建 swapfile。
+    swapfile_path: "/tmp/nvme_data/ioext_swapfile"
+    swapfile_size_mb: 1024
+    auto_format_disk: false  # 仅当目标盘不是 ext4 时自动 mkfs.ext4；生产数据盘不要开启。
+    format_device: false  # 强制每次 setup 前重新格式化目标盘，Phase 2.1 smoke 在 task 中显式开启。
+    mount_options: "noatime,nodiratime"  # direct I/O smoke 使用轻量 ext4 挂载选项，避免访问时间写放大。
+  output_dir: "./test_results/io_ext/ycsb_rocksdb"
+  duration: 180
+  drop_caches_before_run: true  # 多 tenant 并发对比时在 task alias 覆盖为 false，避免 tenant 互相 drop cache。

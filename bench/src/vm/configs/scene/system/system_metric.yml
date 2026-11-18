@@ -1,0 +1,25 @@
+name: "系统 CPU/内存指标监测场景"
+id: "system_metric"
+type: "system"
+class_name: "SystemMetricScene"
+module_path: "vm.scene.system.system_metric"
+parameters:
+  # Phase 4.1 默认使用纯 /proc 采样，不依赖 sched_agent 二进制或 sudo。
+  # 如需旧版 C++ sched_agent 输出，可在任务配置中显式设置 collection_mode: "sched_agent"。
+  collection_mode: "proc"  # proc/sched_agent/auto；auto 当前也走 proc，保证 VM smoke 可自主闭环。
+  duration: 7200  # 作为 global_scene/monitoring_scene 时 controller 会改成 0，持续到 stop 信号。
+  output_dir: "/opt/ioext/test_results/system_metric"
+  sample_interval: 1.0  # 秒；短 smoke 可覆盖为 0.5，长序列建议 >=1s 降低监控扰动。
+  max_samples: 7200  # 防止 global_scene 长时间运行导致内存无限增长。
+  require_samples: true  # 没有有效 CPU delta 或内存样本则失败，避免只创建空 JSON 的假阳性。
+
+  # 旧 sched_agent 路径，仅在 collection_mode=sched_agent 时使用；proc 模式不会读取这些路径。
+  agent_path: "/opt/ioext/src/vm/assets/system/system_metric/build/sched_agent"
+  config_file: "/opt/ioext/src/vm/assets/system/system_metric/config/config.json"
+  agent_output_file: "/opt/ioext/test_results/system_metric/binary_output.bin"
+
+  # 权限管理配置只服务 sched_agent 模式；默认 proc 模式不需要 sudo。
+  privilege:
+    method: "sudo_askpass"  # 权限获取方法: sudo_askpass, sudo_cache, sudo_nopasswd, none
+    askpass_script: ""  # 留空将自动创建临时脚本
+    env_var: "SUDO_PASSWORD"  # 密码环境变量名

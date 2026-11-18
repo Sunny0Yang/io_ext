@@ -1,0 +1,27 @@
+# =========================================================================
+# experiments/reproduction / d2fq / fio_none_be.fio
+# 实验7 d2fq：none 臂 BE 侧。BE 4k randread QD32 持续饱和 90s（[MSC]
+# 主会话补定：两流都 4k randread QD32）。
+# 日志命名：d2fq_none_be
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/be.bin
+
+[be]
+rw=randread
+bs=4k
+iodepth=32
+runtime=90
+randseed=2026111499
+write_lat_log=d2fq_none_be
+write_bw_log=d2fq_none_be
+write_iops_log=d2fq_none_be

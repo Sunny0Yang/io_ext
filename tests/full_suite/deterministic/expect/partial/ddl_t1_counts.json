@@ -1,0 +1,13 @@
+{
+  "name": "ddl_t1_counts",
+  "tier": 1,
+  "match": "invariants_only",
+  "oracle_source": "algorithm_derivation (trace tests/io/full_suite/deterministic/traces/micro/ddl_bulk_first_5.json)",
+  "invariants": {
+    "insert_count_eq": 5,
+    "complete_count_min": 5,
+    "issue_count_lt": 6,
+    "merge_coverage_min": 40
+  },
+  "notes": "Tier-1 invariant gate on the ddl_bulk_first_5 trace (5 x 8-sector requests = 40 sectors total; sectors 2560..5120, structurally background-free). insert_count_eq=5: INSERT events are observable since the Phase-2 kernel fix (scx_io_insert_requests emits trace_block_rq_insert per request) and this trace's clean sectors make the count exact — q_ddl accepts all 5 inserts (no overflow, no draining defer). complete_count_min=5: all 5 requests complete inside the window (5 separate completions prove no merge). issue_count_lt=6: at most 5 dispatches — window purity. merge_coverage_min=40: window ISSUE events carry the full 40-sector payload."
+}

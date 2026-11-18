@@ -1,0 +1,328 @@
+# rig_m1_cache: P0-1 main config -- M1 real-app profile on the NORMAL cache path
+# (cache=on 口径, kvmhost guest /dev/sdb raw disk, m2_none_pressure mounting style:
+# guest runs the bare disk directly; the campaign runner formats ext4 and mounts
+# /mnt/m1_cache_20261031 before every case; scenes use format_device: false).
+#
+# cache=on 口径 (docs/plans/paper_motivation_design.md §0.2):
+#   - YCSB/RocksDB: buffered (use_direct_io: false); the block cache stays at the
+#     bundled rocksdbjni default (8 MiB LRU, verified 2026-10-31 via the
+#     rocksdb.block-cache-capacity property). NOTE: an explicit block-cache size
+#     is NOT settable with the bundled YCSB runtime -- its options-file parser
+#     rejects block_based_table_factory={...} and segfaults on [TableOptions]
+#     sections (see ycsb_rocksdb.py guard). The controlled cache dimension on
+#     the YCSB arm is therefore the page cache; the 8 MiB block cache is a
+#     constant across every arm in this tree.
+#   - db_bench: buffered + cache_size 33554432 (32 MiB, explicit) + bloom_bits 10 kept.
+#   - Shore: inherently buffered (cache path is on by nature); A/B meaningless, kept out.
+#   - Attribution discipline: drop_caches_before_run: true everywhere -- the scene
+#     drops the page cache before load and again between load and run, so cache hits
+#     during the measured window come from the application's own caches (RocksDB
+#     block cache / Shore buffer pool), never from page-cache residue of an earlier
+#     repeat. This is the key to "attributable cache" and MUST stay true.
+#
+# Do NOT change m1_solo_vng.yml defaults; the old direct-I/O M1 data stays
+# reproducible. All new-caliber data comes from this config tree.
+#
+# Result convention: local pulled tars land under
+#   results/motivation_io_behavior_20261029_1793274117/remote_runs/<RUN_ID>/
+# (same motivation_* home as m2; runner: scripts/run_m1_cache_campaign.py
+#  --campaign m1cacheon --repeats 3).
+#
+# Monitoring: ib_system_metric (1 Hz /proc/diskstats on sdb) + m1_pattern_sampler
+# (per-request thinned dump + in-kernel aggregates), reused from rig_m1/m1_solo_vng.yml.
+benchmark_name: "rig_m1_cache M1 real-app cache=on profile (kvmhost sdb)"
+description: >-
+  M1 cache-on rerun on /dev/sdb: YCSB workloada + workloadc (RocksDB buffered,
+  default 8 MiB block cache -- see header), db_bench readwhilewriting + readrandom
+  (buffered, cache_size 32 MiB), Shore QPS50 open loop. Native none only, zero io.*
+  controller writes, page-cache drop before every measured window.
+default_sequence: "M1CACHE_YCSB_a"
+fail_fast_on_scene_error: true
+
+_RUN_ROOT: &run_root "/tmp/m1_cache_20261031"
+_BUNDLE_ROOT: &bundle_root "/tmp/m1_cache_20261031_bundle"
+_JAVA_HOME: &java_home "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+
+_native_none_io_ext: &native_none_io_ext
+  cleanup_stale_when_no_specs: true
+  cleanup_bpffs_pins: true
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  scheduler: "none"
+  output_dir: "/tmp/m1_cache_20261031/scene/{group_id}"
+  duration: 1100
+  # Attribution discipline: drop page cache before load AND between load and run
+  # so measured-window hits come from the RocksDB block cache, not stale page cache.
+  drop_caches_before_run: true
+  database:
+    db_type: "rocksdb"
+    # Parent of data_dir must be the sdb mount point (scene mounts/mount-checks there);
+    # the runner gives every case a freshly formatted fs, so one fixed path is enough.
+    data_dir: "/mnt/m1_cache_20261031/ycsb_db"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    # cache=on: the normal application path (buffered page cache + RocksDB default
+    # 8 MiB block cache, a verified constant across all arms here; explicit sizes
+    # are impossible with the bundled rocksdbjni -- see header comment).
+    use_direct_io: false
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+    environment:
+      JAVA_HOME: *java_home
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  system:
+    mem_limit_mb: 0
+    # The campaign runner reformats sdb and mounts /mnt/m1_cache_20261031 before
+    # every case (state reset between repeats). auto_format_disk stays true as a
+    # safety net if the scene is ever run without the runner on an unformatted disk.
+    auto_format_disk: true
+    format_device: false
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/m1_cache_ycsb"   # accounting only; no io.* values
+  io_ext:
+    <<: *native_none_io_ext
+
+_common_dbbench: &common_dbbench
+  target_device: "sdb"
+  scheduler: "none"
+  output_dir: "/tmp/m1_cache_20261031/scene/{group_id}"
+  duration: 900
+  drop_caches_before_run: true   # same attribution discipline as YCSB
+  dbbench:
+    # Runner provisions the guest bundle: db_bench + librocksdb.so.11.2.0 +
+    # hostlibs/ rsynced from the control host into <bundle_root>/rocksdb.
+    dbbench_bin: "/tmp/m1_cache_20261031_bundle/rocksdb/db_bench"
+    rocksdb_home: "/tmp/m1_cache_20261031_bundle/rocksdb"
+    db_path: "/mnt/m1_cache_20261031/dbbench_db"
+    # cache=on: buffered + explicit 32 MiB block cache (same magnitude as the
+    # YCSB arm; db_bench builds a fresh LRUCache(cache_size) when > 0).
+    use_direct_io: false
+    common_args:
+      num: 1000000
+      value_size: 1024
+      key_size: 16
+      compression_type: "none"
+      bloom_bits: 10
+      cache_size: 33554432
+      write_buffer_size: 67108864
+  system:
+    auto_format_disk: true
+    format_device: false
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/m1_cache_dbb"   # accounting only; no io.* values
+  io_ext:
+    <<: *native_none_io_ext
+
+_common_tailbench: &common_tailbench
+  home: "/tmp/m1_cache_20261031_bundle/tailbench/tailbench-v0.9"
+  working_dir: "/tmp/m1_cache_20261031_bundle/tailbench/tailbench-v0.9/shore"
+  bench_script: "/opt/ioext-bench/src/vm/assets/tailbench/shore/shore_bench.py"
+  binary: "/tmp/m1_cache_20261031_bundle/tailbench/tailbench-v0.9/shore/shore-kits/shore_kits_integrated"
+  run_build: false
+  scratch_dir: "/mnt/m1_cache_20261031/shore_scratch"   # Shore diskrw traffic -> sdb
+  require_latency: true
+  latency_unit: "us"
+  binary_latency_format: "triplet"
+  p99_threshold_us: 50000
+  slo_deadline_us: 50000
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - "sdb"
+      output_dir: "/tmp/m1_cache_20261031/monitor/system_metric"
+  m1_pattern_sampler:
+    base_scene: "scene/block_bpf/m1_pattern_sampler.yml"
+    parameters:
+      output_dir: "/tmp/m1_cache_20261031/monitor/m1_pattern_sampler"
+      output_file: "/tmp/m1_cache_20261031/monitor/m1_pattern_sampler/m1_pattern_sampler.bpftrace.log"
+      summary_file: "/tmp/m1_cache_20261031/monitor/m1_pattern_sampler/m1_pattern_sampler_summary.json"
+      require_events: false
+      privilege:
+        method: "sudo_nopasswd"
+        askpass_script: ""
+
+io_ext_policy_profiles:
+  arm_m1cache_none:
+    name: "rig_m1_cache native none (cache=on profile)"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+
+tenant_groups:
+  # ---------- YCSB workloada (50/50 read/update) ----------
+  m1cache_ycsb_a:
+    count: 1
+    scene_id_template: "m1cache_ycsb_a_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "a"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  # ---------- YCSB workloadc (read only) ----------
+  m1cache_ycsb_c:
+    count: 1
+    scene_id_template: "m1cache_ycsb_c_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        ycsb_workload:
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: "-Xms2048m -Xmx2048m"
+          workload_type: "c"
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 600
+  # ---------- db_bench readwhilewriting (fill -> settle -> 150s measured) ----------
+  m1cache_dbb_rww:
+    count: 1
+    scene_id_template: "m1cache_dbb_rww_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle1"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readwhilewriting"
+          benchmark: "readwhilewriting"
+          duration: 150
+          args:
+            threads: 4
+            writes: 3000000
+  # ---------- db_bench readrandom (fill -> settle -> 150s measured) ----------
+  m1cache_dbb_rr:
+    count: 1
+    scene_id_template: "m1cache_dbb_rr_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        phases:
+        - name: "fillrandom"
+          benchmark: "fillrandom"
+        - name: "settle2"
+          benchmark: "sleep"
+          settle_sec: 75
+        - name: "readrandom"
+          benchmark: "readrandom"
+          duration: 150
+          args:
+            threads: 4
+  # ---------- Shore QPS50 open loop (~600s ROI) ----------
+  m1cache_shore_qps50:
+    count: 1
+    scene_id_template: "m1cache_shore_qps50_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        target_device: "sdb"
+        output_dir: "/tmp/m1_cache_20261031/scene/{group_id}"
+        duration: 1000
+        drop_caches_before_run: true   # attribution discipline (scene: tailbench_shore)
+        scheduler: "none"
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: "/sys/fs/cgroup/m1_cache_shore"   # accounting only; no io.* values
+            controllers:
+            - "io"
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          # Data file lives on the guest root disk (outside the reformatted sdb);
+          # Shore's own write traffic (diskrw) goes to scratch_dir on sdb.
+          data_file: "/tmp/m1_cache_20261031_bundle/data/db-tpcc-1"
+          env:
+            TBENCH_CLIENT_THREADS: "2"
+            TBENCH_QPS: "50"
+            TBENCH_WARMUPREQS: "1000"
+            TBENCH_MAXREQS: "30000"     # 30000/50 = 600s ROI (m1_solo spec)
+            TBENCH_MINSLEEPNS: "10000"
+
+test_sequences:
+- sequence_id: "M1CACHE_YCSB_a"
+  name: "M1 cache=on YCSB workloada (buffered, default 8MiB block cache, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "ycsb workloada cache=on solo none"
+    tenant_groups:
+    - "m1cache_ycsb_a"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "m1_pattern_sampler"
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1CACHE_YCSB_c"
+  name: "M1 cache=on YCSB workloadc (buffered, default 8MiB block cache, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "ycsb workloadc cache=on solo none"
+    tenant_groups:
+    - "m1cache_ycsb_c"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "m1_pattern_sampler"
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "M1CACHE_DBB_rww"
+  name: "M1 cache=on db_bench readwhilewriting (buffered + 32MiB cache, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "dbbench readwhilewriting cache=on solo none"
+    tenant_groups:
+    - "m1cache_dbb_rww"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "m1_pattern_sampler"
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "M1CACHE_DBB_rr"
+  name: "M1 cache=on db_bench readrandom (buffered + 32MiB cache, none)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "dbbench readrandom cache=on solo none"
+    tenant_groups:
+    - "m1cache_dbb_rr"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "m1_pattern_sampler"
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "M1CACHE_SHORE_qps50"
+  name: "M1 cache=on Shore QPS50 open loop (~600s ROI, none; buffered by nature)"
+  io_ext_policy: "arm_m1cache_none"
+  steps:
+  - name: "shore qps50 cache=on solo none"
+    tenant_groups:
+    - "m1cache_shore_qps50"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "m1_pattern_sampler"
+    monitoring_startup_time: 3
+    duration: 1000

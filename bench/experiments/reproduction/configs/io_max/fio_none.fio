@@ -1,0 +1,31 @@
+# =========================================================================
+# experiments/reproduction / io_max / fio_none.fio
+# 实验3 io.max：none 臂。单 BE cgroup 4k randwrite，无限制（对照柱）。
+# [PLAN] 计划固定：4k randwrite 持续 60s；限速 32 MiB/s 是 native/iox 臂的 knob。
+# QD16 为 [GAP-C] C 补定（plan 未定 io.max 的 QD；对齐 BE QD16 通用口径，
+# 4k@QD16 在 virtio-blk 上供给远超 32MiB/s=8k IOPS，保证 cap 绑定）——
+# 待主会话确认。
+# 单租户：/data/lc.bin（[MSC] 单租户实验用 lc.bin）；direct=1 [MSC]
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/lc.bin
+
+[iomax_main]
+rw=randwrite
+bs=4k
+iodepth=16
+runtime=60
+ramp_time=5
+randseed=2026111400
+write_lat_log=io_max_none_main
+write_bw_log=io_max_none_main
+write_iops_log=io_max_none_main

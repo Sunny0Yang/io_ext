@@ -1,0 +1,257 @@
+# [RECAL markers for the CloudLab NVMe track -- hand-maintained file]
+#   RECAL(DEVICE)  target_device=nvme0n1 (file_name=/dev/nvme0n1)
+#   RECAL(CPUBIND) batch cpu pinning='1-10' (paper design: 10 batch cores;
+#     INVALID on hosts with <11 CPUs -- kvmhost has 6 vCPUs, use 1-5 there)
+#   RECAL(LOADERS) loader path=/opt/io-ext/userspace/loader_* (deploy per host)
+#   REMOVED 2026-10-21: arb_wfq / arb_hwfq / local_ddl deleted from grids
+#     (no source in ioext, proposal-only; niches covered by arb_wdrr /
+#     q_ddl/q_sp_edf / the T2-T3 topology arms).
+benchmark_name: isol_bench D1-Q4 homomorphism mq-deadline (iosched_ext)
+description: >-
+  D1-Q4 HOMOMORPHISM experiment: same-algorithm port overhead for mq-deadline.
+  Compares native mq-deadline vs iox_mq_deadline (BPF port) under identical
+  deep random read/write pressure. The goal is NOT for iox to win, but to
+  measure the programmable implementation penalty while preserving control
+  behavior. Ideal result: iox_mq_deadline ≈ native mq-deadline with only
+  X% CPU/latency/throughput tax.
+  FILENAME MARKED _homomorphism_ because complete homomorphism verification
+  monitoring is not yet wired (block-mq latency probes lack parity coverage
+  between native and scx_io paths). Use paper_block_mq_latency as best-effort
+  proxy; do not claim full homomorphism from this config alone.
+  Reference: ref/gpt-matrix/hierarchy-upgrade.md E4; matrix-and-goal.md D1-B.
+  Pairs: native mq-deadline vs iox_mq_deadline (this file).
+         native kyber vs iox_kyber (see d1_q4_homomorphism_kyber.yml).
+
+_unlimited_io_max: &unlimited_io_max
+  rbps: "max"
+  wbps: "max"
+  riops: "max"
+  wiops: "max"
+
+# Best-effort monitoring: paper_block_mq_latency is the only probe that works
+# across both native and scx_io schedulers. scx_io_bpf_hook_cost +
+# scx_io_bypass_fallback are scx-only and NOT directly comparable to native,
+# so they are attached to scx sequences only (not native) to avoid implying
+# homomorphism coverage that does not exist.
+_monitoring_native: &monitoring_native
+  - ib_system_metric
+  - ib_perf_stat
+  - ib_block_mq_latency
+_monitoring_scx: &monitoring_scx
+  - ib_system_metric
+  - ib_perf_stat
+  - ib_block_mq_latency
+  - ib_scx_io_bpf_hook_cost
+  - ib_scx_io_bypass_fallback
+
+_fio_read_stream: &fio_read_stream
+  ioengine: "io_uring"
+  direct: 1
+  bs: "4k"
+  rw: "randread"
+  iodepth: 128
+  numjobs: 1
+  runtime_sec: 60
+  time_based: true
+  group_reporting: true
+  clat_percentiles: true
+  lat_percentiles: true
+  percentile_list: "90:95:99:99.9"
+  ramp_time: 20
+
+_fio_write_stream: &fio_write_stream
+  ioengine: "io_uring"
+  direct: 1
+  bs: "4k"
+  rw: "randwrite"
+  iodepth: 128
+  numjobs: 1
+  runtime_sec: 60
+  time_based: true
+  group_reporting: true
+  clat_percentiles: true
+  lat_percentiles: true
+  percentile_list: "90:95:99:99.9"
+  ramp_time: 20
+
+_common_params: &common_params
+  target_device: "nvme0n1"
+  file_name: "/dev/nvme0n1"
+  scheduler_tunables: {}
+  output_dir: "./test_results/isol_bench/paper/d1_q4_homomorphism_mq_deadline/{group_id}"
+  duration: 120
+  drop_caches_before_run: false
+  cooldown_sec: 1
+
+_io_ext_cleanup: &io_ext_cleanup
+  cleanup_stale: true
+  cleanup_bpffs_pins: true
+  stale_loader_patterns:
+    - "loader_arb_"
+    - "loader_q_"
+    - "loader_minimal"
+  root_cgroup:
+    path: "/sys/fs/cgroup"
+    controllers: ["io"]
+
+_io_ext_passthrough: &io_ext_passthrough
+  cleanup_stale: false
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+_cgroup_unlimited: &cgroup_unlimited
+  path: "/sys/fs/cgroup/{group_id}_tenant_{idx1}"
+  controllers: ["io"]
+  io_weight: 100
+  io_max: *unlimited_io_max
+  io_cost:
+    qos:
+      enable: false
+
+# IOX tenant cgroup: attach-only (weights travel via loader -W / arbiter);
+# io_weight/io_max null blocks base-scene default re-injection (rig contract).
+_cgroup_iox: &cgroup_iox
+  path: "/sys/fs/cgroup/{group_id}_tenant_{idx1}"
+  controllers: ["io"]
+  io_weight: null
+  io_max: null
+  io_cost:
+    qos:
+      enable: false
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      output_dir: "./test_results/isol_bench/paper/d1_q4_homomorphism_mq_deadline/system_metric"
+  ib_perf_stat:
+    base_scene: "scene/system/perf_stat.yml"
+    parameters:
+      cpu_list: "2"
+      sample_interval_ms: 1000
+      require_available: false
+      output_dir: "./test_results/isol_bench/paper/d1_q4_homomorphism_mq_deadline/perf_stat"
+  ib_block_mq_latency:
+    base_scene: "scene/block_bpf/block_mq_latency.yml"
+    parameters:
+      output_dir: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/block_mq_latency"
+      output_file: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/block_mq_latency/block_mq_latency.bpftrace.log"
+      summary_file: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/block_mq_latency/block_mq_latency_summary.json"
+      require_events: true
+      privilege: {method: "sudo_nopasswd"}
+  ib_scx_io_bpf_hook_cost:
+    base_scene: "scene/block_bpf/scx_io_bpf_hook_cost.yml"
+    parameters:
+      output_dir: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/scx_io_bpf_hook_cost"
+      output_file: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/scx_io_bpf_hook_cost/scx_io_bpf_hook_cost.bpftrace.log"
+      summary_file: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/scx_io_bpf_hook_cost/scx_io_bpf_hook_cost_summary.json"
+      startup_grace_sec: 1.0
+      require_events: false
+      privilege: {method: "sudo_nopasswd", askpass_script: "", env_var: "SUDO_PASSWORD"}
+  ib_scx_io_bypass_fallback:
+    base_scene: "scene/block_bpf/scx_io_bypass_fallback.yml"
+    parameters:
+      output_dir: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/scx_io_bypass_fallback"
+      output_file: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/scx_io_bypass_fallback/scx_io_bypass_fallback.bpftrace.log"
+      summary_file: "/dev/shm/ioext_bench_paper_monitoring/d1_q4_mq/scx_io_bypass_fallback/scx_io_bypass_fallback_summary.json"
+      startup_grace_sec: 1.0
+      require_events: false
+      privilege: {method: "sudo_nopasswd", env_var: "SUDO_PASSWORD"}
+
+io_ext_policy_profiles:
+  native_mq_deadline:
+    name: "D1-Q4 native mq-deadline (reference)"
+    target_device: "nvme0n1"
+    scheduler: "mq-deadline"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  iox_mq_deadline:
+    name: "D1-Q4 iox_mq_deadline (BPF port)"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      root_policies:
+        - name: "q_mq_deadline_root"
+          path: "/opt/io-ext/userspace/loader_q_mq_deadline"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+
+tenant_groups:
+  native_mq_deadline_read:
+    count: 1
+    scene_id_template: "ib_d1q4_mq_native_read_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "mq-deadline"
+        job_name: "read_stream"
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_read_stream
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_unlimited
+  native_mq_deadline_write:
+    count: 1
+    scene_id_template: "ib_d1q4_mq_native_write_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "mq-deadline"
+        job_name: "write_stream"
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_write_stream
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_unlimited
+  iox_mq_deadline_read:
+    count: 1
+    scene_id_template: "ib_d1q4_mq_iox_read_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        job_name: "read_stream"
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_read_stream
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  iox_mq_deadline_write:
+    count: 1
+    scene_id_template: "ib_d1q4_mq_iox_write_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        job_name: "write_stream"
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_write_stream
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+
+test_sequences:
+  - sequence_id: "D1Q4_mq_native"
+    name: "D1-Q4 native mq-deadline (read+write contention)"
+    io_ext_policy: "native_mq_deadline"
+    steps:
+      - {name: "native mq-deadline read+write", tenant_groups: ["native_mq_deadline_read", "native_mq_deadline_write"], monitoring_scenes: *monitoring_native, monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q4_mq_iox"
+    name: "D1-Q4 iox_mq_deadline (BPF port read+write)"
+    io_ext_policy: "iox_mq_deadline"
+    steps:
+      - {name: "iox_mq_deadline read+write", tenant_groups: ["iox_mq_deadline_read", "iox_mq_deadline_write"], monitoring_scenes: *monitoring_scx, monitoring_startup_time: 3, duration: 120}
+
+default_sequence: "D1Q4_mq_native"
+fail_fast_on_scene_error: true

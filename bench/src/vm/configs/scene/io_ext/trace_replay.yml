@@ -1,0 +1,23 @@
+name: "io-ext Tencent trace replay smoke"
+id: "ioext_trace_replay_tencent006_workload"
+type: "io_ext"
+class_name: "IoExtTraceReplayScene"
+module_path: "vm.scene.io_ext.trace_replay"
+parameters:
+  output_dir: "./test_results/io_ext/trace_replay"
+  duration: 180
+  replay:
+    # Phase3 不再依赖外部 trace replay 项目；VM 内直接编译并调用仓库 assets/trace_replay/trace_replay.c 生成的二进制。
+    tool: "src/vm/assets/trace_replay/trace_replay"
+    device: "/dev/nvme0n1"
+    file: "src/vm/assets/trace/Tencent-006"  # 原始 Tencent CSV：timestamp,offset_512b_blocks,size_512b_blocks,op,device_id。
+    trace_format: "tencent_csv"  # C helper 直接解析 CSV；offset/size 从 512B block 转 bytes，并按 direct_align 对齐。
+    max_lines: 1000  # VM smoke 只取 trace head，避免直接重放 4GB+ 全量 Tencent trace。
+    speedup: 1.0  # 保持 trace 原始时间间隔；若需要加速闭环，可在 task alias 中显式调大。
+    direct_align: 4096  # O_DIRECT buffer/size/offset 对齐；不满足会在 VM 中出现 EINVAL。
+    no_stall: false
+    write_enable: true  # Tencent trace 含写请求；只应在一次性 VM 测试盘上启用，禁止指向宿主生产盘。
+    buffered: false
+    build_tool: true  # 若 playbook 未预先 make，scene setup 会尝试在 assets/trace_replay 下构建。
+    require_metrics: true  # replay 成功但没有 IOPS/带宽/延迟统计时视为失败，避免假阳性。
+    output_dir: "./test_results/io_ext/trace_replay/replay_output"

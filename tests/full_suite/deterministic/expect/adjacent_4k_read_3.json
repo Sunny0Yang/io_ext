@@ -1,0 +1,1 @@
+{"name":"adjacent_4k_read_3","expected_dispatch_order":[{"sector":0,"op":"read"},{"sector":8,"op":"read"},{"sector":16,"op":"read"}],"expected_merge":true,"notes":"相邻 sector 同 op, merge 可能"}

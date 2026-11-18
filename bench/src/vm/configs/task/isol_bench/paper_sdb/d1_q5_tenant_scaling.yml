@@ -1,0 +1,371 @@
+# AUTO-ADAPTED paper experiment -> kvmhost dress-rehearsal copy (sdb track)
+# RECAL on new hardware (grep for 'RECAL('):
+#   RECAL(DEVICE)  target_device=sdb (file_name=/dev/sdb)
+#   RECAL(CPUBIND) batch cpu pinning='1-5' (6-vCPU guest; paper default 1-10)
+#   RECAL(LOADERS) loader path=/opt/io-ext/userspace/loader_*
+#   REMOVED 2026-10-21: arb_wfq / arb_hwfq / local_ddl deleted (no source)
+benchmark_name: isol_bench D1-Q5 tenant-count scalability (iosched_ext)
+description: >-
+  D1-Q5 tenant-count scalability with FIXED offered load.
+  Total fio jobs, total QD, and total offered bandwidth are held constant;
+  only the number of cgroups (tenants) increases. This isolates the
+  control-plane / dispatch cost of the arbiter from workload scaling.
+  Contrasts with D1-Q1/Q2 where both workload AND tenant count scale together.
+  Grid: n = 1, 2, 4, 8, 16, 32, 64, 128 tenants sharing a fixed total QD=256.
+  Per-tenant QD = 256 / n (so total queue depth is preserved).
+  Profiles: iox_bare (framework floor), iox_fifo (BPF queue tax),
+            iox_arb_noop (arbiter invocation tax).
+  REMOVED 2026-10-21: iox_arb_wfq deleted from the grid (no source/binary in ioext, proposal-only; weighted-fairness niche covered by arb_wdrr) (loader_arb_wfq still missing). iox_arb_slo was promoted 2026-10-21: loader_arb_slo exists (POLICIES_INVENTORY §4, B grade).
+  but have no loader binaries yet; sequences referencing them are marked
+  _unimplemented_ and will fail at loader-start until loader_arb_wfq /
+  loader_arb_slo are built. They are included so the grid is complete.
+  Reference: ref/gpt-matrix/matrix-and-goal.md D1-C; hierarchy-upgrade.md E5.
+
+_unlimited_io_max: &unlimited_io_max
+  rbps: "max"
+  wbps: "max"
+  riops: "max"
+  wiops: "max"
+
+_io_ext_cleanup: &io_ext_cleanup
+  cleanup_stale: true
+  cleanup_bpffs_pins: true
+  stale_loader_patterns:
+    - "loader_arb_"
+    - "loader_q_"
+    - "loader_minimal"
+  root_cgroup:
+    path: "/sys/fs/cgroup"
+    controllers: ["io"]
+
+_io_ext_passthrough: &io_ext_passthrough
+  cleanup_stale: false
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+_cgroup_unlimited: &cgroup_unlimited
+  path: "/sys/fs/cgroup/{group_id}_tenant_{idx1}"
+  controllers: ["io"]
+  io_weight: 100
+  io_max: *unlimited_io_max
+  io_cost:
+    qos:
+      enable: false
+
+# IOX tenant cgroup: attach-only (weights travel via loader -W / arbiter);
+# io_weight/io_max null blocks base-scene default re-injection (rig contract).
+_cgroup_iox: &cgroup_iox
+  path: "/sys/fs/cgroup/{group_id}_tenant_{idx1}"
+  controllers: ["io"]
+  io_weight: null
+  io_max: null
+  io_cost:
+    qos:
+      enable: false
+
+# Fixed total offered load: total QD = 256 across all tenants.
+# Per-tenant QD is set per-step via fio_subjob_tenants at runtime; here we
+# declare the max-count template (n=128 with QD=2 each = 256 total).
+# The scene's fio_subjob_mode splits the global QD across tenants.
+_common_params: &common_params
+  target_device: "sdb"
+  file_name: "/dev/sdb"
+  scheduler_tunables: {}
+  output_dir: "./test_results/isol_bench/paper_sdb/d1_q5/{group_id}"
+  duration: 120
+  drop_caches_before_run: false
+  cooldown_sec: 1
+
+# Base fio global for subjob mode: total QD 256 split across tenants.
+# iodepth here is PER-TENANT; controller will divide 256 by tenant_count.
+_fio_batch_subjob: &fio_batch_subjob
+  ioengine: "libaio"
+  direct: 1
+  bs: "4k"
+  rw: "randread"
+  iodepth: 2
+  numjobs: 1
+  runtime_sec: 60
+  time_based: true
+  group_reporting: true
+  ramp_time: 20
+  cpus_allowed: "1-5"
+  percentile_list: "20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100"
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      output_dir: "./test_results/isol_bench/paper_sdb/d1_q5/system_metric"
+  ib_perf_stat:
+    base_scene: "scene/system/perf_stat.yml"
+    parameters:
+      cpu_list: "2"
+      sample_interval_ms: 1000
+      require_available: false
+      output_dir: "./test_results/isol_bench/paper_sdb/d1_q5/perf_stat"
+
+io_ext_policy_profiles:
+  iox_bare:
+    name: "D1-Q5 iox_bare (framework floor)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+  iox_fifo:
+    name: "D1-Q5 iox_fifo (BPF FIFO queue)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      root_policies:
+        - name: "q_fifo_root"
+          path: "/opt/io-ext/userspace/loader_q_fifo"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+  iox_arb_noop:
+    name: "D1-Q5 iox_arb_noop (arbiter invocation tax)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      arbiters:
+        - name: "arb_noop"
+          path: "/opt/io-ext/userspace/loader_arb_noop"
+          scope: "arbiter"
+          args: []
+      root_policies:
+        - name: "q_fifo_root"
+          path: "/opt/io-ext/userspace/loader_q_fifo"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+  iox_arb_slo:
+    name: "D1-Q5 iox_arb_slo (SLO-aware WDRR arbiter; promoted 2026-10-21 — loader_arb_slo exists per POLICIES_INVENTORY)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      arbiters:
+        - name: "arb_slo"
+          path: "/opt/io-ext/userspace/loader_arb_slo"
+          scope: "arbiter"
+          args: []
+      root_policies:
+        - name: "q_fifo_root"
+          path: "/opt/io-ext/userspace/loader_q_fifo"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+
+tenant_groups:
+  tenant_iox_bare:
+    count: 128
+    scene_id_template: "ib_d1q5_iox_bare_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch_subjob
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+    execution_mode: "fio_subjob"
+    collapsed_scene_id: "ib_d1q5_iox_bare_subjob"
+  tenant_iox_fifo:
+    count: 128
+    scene_id_template: "ib_d1q5_iox_fifo_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch_subjob
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+    execution_mode: "fio_subjob"
+    collapsed_scene_id: "ib_d1q5_iox_fifo_subjob"
+  tenant_iox_arb_noop:
+    count: 128
+    scene_id_template: "ib_d1q5_iox_arb_noop_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch_subjob
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+    execution_mode: "fio_subjob"
+    collapsed_scene_id: "ib_d1q5_iox_arb_noop_subjob"
+  tenant_iox_arb_slo:
+    count: 128
+    scene_id_template: "ib_d1q5_iox_arb_slo_unimpl_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *common_params
+        scheduler: "scx_io"
+        system: {cpu_bind: "1-5"}
+        fio_global: *fio_batch_subjob
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+    execution_mode: "fio_subjob"
+    collapsed_scene_id: "ib_d1q5_iox_arb_slo_unimpl_subjob"
+
+test_sequences:
+  # === iox_bare: framework floor ===
+  - sequence_id: "D1Q5_iox_bare_n1"
+    name: "D1-Q5 iox_bare n=1 (fixed total QD=256)"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=1 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 1, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n2"
+    name: "D1-Q5 iox_bare n=2"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=2 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 2, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n4"
+    name: "D1-Q5 iox_bare n=4"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=4 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 4, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n8"
+    name: "D1-Q5 iox_bare n=8"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=8 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 8, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n16"
+    name: "D1-Q5 iox_bare n=16"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=16 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 16, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n32"
+    name: "D1-Q5 iox_bare n=32"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=32 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 32, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n64"
+    name: "D1-Q5 iox_bare n=64"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=64 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 64, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_bare_n128"
+    name: "D1-Q5 iox_bare n=128"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "n=128 iox_bare", tenant_groups: ["tenant_iox_bare"], tenant_count: 128, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === iox_fifo: BPF queue tax ===
+  - sequence_id: "D1Q5_iox_fifo_n1"
+    name: "D1-Q5 iox_fifo n=1"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=1 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 1, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n2"
+    name: "D1-Q5 iox_fifo n=2"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=2 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 2, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n4"
+    name: "D1-Q5 iox_fifo n=4"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=4 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 4, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n8"
+    name: "D1-Q5 iox_fifo n=8"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=8 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 8, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n16"
+    name: "D1-Q5 iox_fifo n=16"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=16 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 16, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n32"
+    name: "D1-Q5 iox_fifo n=32"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=32 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 32, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n64"
+    name: "D1-Q5 iox_fifo n=64"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=64 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 64, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_fifo_n128"
+    name: "D1-Q5 iox_fifo n=128"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "n=128 iox_fifo", tenant_groups: ["tenant_iox_fifo"], tenant_count: 128, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === iox_arb_noop: arbiter invocation tax ===
+  - sequence_id: "D1Q5_iox_arb_noop_n1"
+    name: "D1-Q5 iox_arb_noop n=1"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=1 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 1, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n2"
+    name: "D1-Q5 iox_arb_noop n=2"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=2 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 2, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n4"
+    name: "D1-Q5 iox_arb_noop n=4"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=4 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 4, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n8"
+    name: "D1-Q5 iox_arb_noop n=8"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=8 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 8, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n16"
+    name: "D1-Q5 iox_arb_noop n=16"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=16 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 16, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n32"
+    name: "D1-Q5 iox_arb_noop n=32"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=32 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 32, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n64"
+    name: "D1-Q5 iox_arb_noop n=64"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=64 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 64, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_noop_n128"
+    name: "D1-Q5 iox_arb_noop n=128"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "n=128 iox_arb_noop", tenant_groups: ["tenant_iox_arb_noop"], tenant_count: 128, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === iox_arb_wfq UNIMPLEMENTED — will fail until loader_arb_wfq is built ===
+  - sequence_id: "D1Q5_iox_arb_slo_n1"
+    name: "D1-Q5 iox_arb_slo n=1"
+    io_ext_policy: "iox_arb_slo"
+    steps:
+      - {name: "n=1 iox_arb_slo", tenant_groups: ["tenant_iox_arb_slo"], tenant_count: 1, monitoring_scenes: ["ib_system_metric"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_slo_n64"
+    name: "D1-Q5 iox_arb_slo n=64"
+    io_ext_policy: "iox_arb_slo"
+    steps:
+      - {name: "n=64 iox_arb_slo", tenant_groups: ["tenant_iox_arb_slo"], tenant_count: 64, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q5_iox_arb_slo_n128"
+    name: "D1-Q5 iox_arb_slo n=128"
+    io_ext_policy: "iox_arb_slo"
+    steps:
+      - {name: "n=128 iox_arb_slo", tenant_groups: ["tenant_iox_arb_slo"], tenant_count: 128, monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+default_sequence: "D1Q5_iox_bare_n1"
+fail_fast_on_scene_error: false

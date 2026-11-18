@@ -1,0 +1,22 @@
+name: "io-ext global loader template"
+id: "ioext_global_loader"
+type: "io_ext"
+class_name: "IoExtLoaderScene"
+module_path: "vm.scene.io_ext.loader"
+parameters:
+  target_device: "nvme0n1"
+  scheduler: "default"
+  output_dir: "./test_results/io_ext/loader"
+  io_ext:
+    # 这个场景通常作为 sequence.global_scene 使用：全局启动一次 root policy 或 arbiter，
+    # tenant workload 场景只进自己的 cgroup，不再各自启动 loader，避免并发互相 pkill 或抢占 BPFFS pin。
+    cleanup_stale: true
+    cleanup_bpffs_pins: true
+    root_cgroup:
+      # root/global policy 的默认挂载点。loader_q_* 本质仍然是“挂到某个 cgroup 的 policy”，
+      # 只是这里选择挂到 root cgroup，使所有子 tenant 共享同一个 q_mq_deadline policy。
+      path: "/sys/fs/cgroup"
+      controllers: ["io"]
+    arbiters: []        # loader_arb_* 放这里；它们是全局仲裁器，不带 cgroup 参数。
+    root_policies: []   # loader_q_* 放这里表示挂到 root_cgroup.path。
+    cgroup_policies: [] # 如需 per-tenant policy 才使用；当前 q_mq_deadline 实验不启用。

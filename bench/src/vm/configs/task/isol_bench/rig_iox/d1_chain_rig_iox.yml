@@ -1,0 +1,894 @@
+benchmark_name: isol_bench rig D1-Q1 iox cgroup chain topology (kvmhost/sdb)
+description: "Rig D1-Q1 iox T1: LC 4K randread QD=1 io_uring, policy at v2 root, chain depth D x 4 x 2 policies + q_none controls + leafpol16, n=32 (design \xA74)."
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_iox/d1c/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_iox/d1c/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_iox/d1c/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_iox/d1c/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/rig_iox/d1c/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  iox_q_fifo_chain2:
+    name: rig iox q_fifo_chain2
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: &id001
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_fifo_chain2_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_fifo_chain4:
+    name: rig iox q_fifo_chain4
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_fifo_chain4_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_fifo_chain8:
+    name: rig iox q_fifo_chain8
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_fifo_chain8_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_fifo_chain16:
+    name: rig iox q_fifo_chain16
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_fifo_chain16_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_mq_deadline_chain2:
+    name: rig iox q_mq_deadline_chain2
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_mq_deadline_chain2_root
+        path: /opt/io-ext/userspace/loader_q_mq_deadline
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_mq_deadline_chain4:
+    name: rig iox q_mq_deadline_chain4
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_mq_deadline_chain4_root
+        path: /opt/io-ext/userspace/loader_q_mq_deadline
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_mq_deadline_chain8:
+    name: rig iox q_mq_deadline_chain8
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_mq_deadline_chain8_root
+        path: /opt/io-ext/userspace/loader_q_mq_deadline
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_mq_deadline_chain16:
+    name: rig iox q_mq_deadline_chain16
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_mq_deadline_chain16_root
+        path: /opt/io-ext/userspace/loader_q_mq_deadline
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_none_chain4:
+    name: rig iox q_none_chain4
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_none_chain4_root
+        path: /opt/io-ext/userspace/loader_q_none
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_none_chain16:
+    name: rig iox q_none_chain16
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: q_none_chain16_root
+        path: /opt/io-ext/userspace/loader_q_none
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  iox_q_fifo_leafpol16:
+    name: rig iox q_fifo leafpol16 per-tenant
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: lc_iox_q_fifo_leafpol16
+      name_template: q_fifo_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+tenant_groups:
+  lc_iox_q_fifo_chain2:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_fifo_D2_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_fifo_D2_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_fifo_chain2
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqf_d2/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_fifo_chain4:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_fifo_D4_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_fifo_D4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_fifo_chain4
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqf_d4/a/b/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_fifo_chain8:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_fifo_D8_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_fifo_D8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_fifo_chain8
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqf_d8/a/b/c/d/e/f/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_fifo_chain16:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_fifo_D16_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_fifo_D16_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_fifo_chain16
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqf_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_mq_deadline_chain2:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_mq_deadline_D2_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_mq_deadline_D2_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_mq_deadline_chain2
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqd_d2/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_mq_deadline_chain4:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_mq_deadline_D4_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_mq_deadline_D4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_mq_deadline_chain4
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqd_d4/a/b/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_mq_deadline_chain8:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_mq_deadline_D8_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_mq_deadline_D8_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_mq_deadline_chain8
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqd_d8/a/b/c/d/e/f/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_mq_deadline_chain16:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_mq_deadline_D16_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_mq_deadline_D16_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_mq_deadline_chain16
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqd_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_none_chain4:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_none_D4_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_none_D4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_none_chain4
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqn_d4/a/b/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_none_chain16:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_none_D16_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_none_D16_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_none_chain16
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1cqn_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  lc_iox_q_fifo_leafpol16:
+    count: 32
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d1c_q_fifo_leafpol16_D16_t{idx1}
+    collapsed_scene_id: ib_rig_d1c_q_fifo_leafpol16_D16_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d1c/q_fifo_leafpol16
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d1clp_d16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: D1Q1_iox_q_fifo_chain2_n32
+  name: D1-Q1 rig iox q_fifo chain D2 n=32
+  io_ext_policy: iox_q_fifo_chain2
+  steps:
+  - name: n=32 LC iox q_fifo chain D2
+    tenant_groups:
+    - lc_iox_q_fifo_chain2
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_fifo_chain4_n32
+  name: D1-Q1 rig iox q_fifo chain D4 n=32
+  io_ext_policy: iox_q_fifo_chain4
+  steps:
+  - name: n=32 LC iox q_fifo chain D4
+    tenant_groups:
+    - lc_iox_q_fifo_chain4
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_fifo_chain8_n32
+  name: D1-Q1 rig iox q_fifo chain D8 n=32
+  io_ext_policy: iox_q_fifo_chain8
+  steps:
+  - name: n=32 LC iox q_fifo chain D8
+    tenant_groups:
+    - lc_iox_q_fifo_chain8
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_fifo_chain16_n32
+  name: D1-Q1 rig iox q_fifo chain D16 n=32
+  io_ext_policy: iox_q_fifo_chain16
+  steps:
+  - name: n=32 LC iox q_fifo chain D16
+    tenant_groups:
+    - lc_iox_q_fifo_chain16
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_mq_deadline_chain2_n32
+  name: D1-Q1 rig iox q_mq_deadline chain D2 n=32
+  io_ext_policy: iox_q_mq_deadline_chain2
+  steps:
+  - name: n=32 LC iox q_mq_deadline chain D2
+    tenant_groups:
+    - lc_iox_q_mq_deadline_chain2
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_mq_deadline_chain4_n32
+  name: D1-Q1 rig iox q_mq_deadline chain D4 n=32
+  io_ext_policy: iox_q_mq_deadline_chain4
+  steps:
+  - name: n=32 LC iox q_mq_deadline chain D4
+    tenant_groups:
+    - lc_iox_q_mq_deadline_chain4
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_mq_deadline_chain8_n32
+  name: D1-Q1 rig iox q_mq_deadline chain D8 n=32
+  io_ext_policy: iox_q_mq_deadline_chain8
+  steps:
+  - name: n=32 LC iox q_mq_deadline chain D8
+    tenant_groups:
+    - lc_iox_q_mq_deadline_chain8
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_mq_deadline_chain16_n32
+  name: D1-Q1 rig iox q_mq_deadline chain D16 n=32
+  io_ext_policy: iox_q_mq_deadline_chain16
+  steps:
+  - name: n=32 LC iox q_mq_deadline chain D16
+    tenant_groups:
+    - lc_iox_q_mq_deadline_chain16
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_none_chain4_n32
+  name: D1-Q1 rig iox q_none chain D4 n=32
+  io_ext_policy: iox_q_none_chain4
+  steps:
+  - name: n=32 LC iox q_none chain D4
+    tenant_groups:
+    - lc_iox_q_none_chain4
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_none_chain16_n32
+  name: D1-Q1 rig iox q_none chain D16 n=32
+  io_ext_policy: iox_q_none_chain16
+  steps:
+  - name: n=32 LC iox q_none chain D16
+    tenant_groups:
+    - lc_iox_q_none_chain16
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D1Q1_iox_q_fifo_leafpol16_n32
+  name: D1-Q1 rig iox q_fifo leafpol16 n=32
+  io_ext_policy: iox_q_fifo_leafpol16
+  steps:
+  - name: n=32 LC iox q_fifo leafpol16
+    tenant_groups:
+    - lc_iox_q_fifo_leafpol16
+    tenant_count: 32
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+default_sequence: D1Q1_iox_q_fifo_chain2_n32
+fail_fast_on_scene_error: true

@@ -1,0 +1,114 @@
+#!/usr/bin/env bpftrace
+/*
+ * scx_io BPF struct_ops boundary-cost approximation.
+ *
+ * Function-pointer BPF callbacks such as arbiter->pick_cgroup cannot be named
+ * directly by bpftrace. This script measures the kernel wrappers immediately
+ * around those calls:
+ * - scx_io_dispatch_request includes hold_dispatch/pick_cgroup and dispatch.
+ * - scx_io_policy_dispatch_rqptr wraps policy->ops->cgroup_dispatch.
+ * - scx_io_insert_requests includes iosched_insert_ctx construction and
+ *   policy->ops->insert_request.
+ */
+
+BEGIN
+{
+  printf("SCX_IO_BPF_HOOK_COST_START\n");
+  printf("targets=scx_io_insert_requests,scx_io_dispatch_request,scx_io_policy_dispatch_rqptr,scx_io_completed_request,... units=count,ns,us\n");
+}
+
+kprobe:scx_io_insert_requests { @sbh_insert_requests_count = count(); @sbh_insert_requests_start[tid] = nsecs; }
+kretprobe:scx_io_insert_requests /@sbh_insert_requests_start[tid]/
+{
+  $delta_ns = nsecs - @sbh_insert_requests_start[tid];
+  @sbh_insert_requests_ns = stats($delta_ns);
+  @sbh_insert_requests_us = hist($delta_ns / 1000);
+  delete(@sbh_insert_requests_start[tid]);
+}
+
+kprobe:scx_io_dispatch_request { @sbh_dispatch_request_count = count(); @sbh_dispatch_request_start[tid] = nsecs; }
+kretprobe:scx_io_dispatch_request /@sbh_dispatch_request_start[tid]/
+{
+  $delta_ns = nsecs - @sbh_dispatch_request_start[tid];
+  @sbh_dispatch_request_ns = stats($delta_ns);
+  @sbh_dispatch_request_us = hist($delta_ns / 1000);
+  if (retval == 0) { @sbh_dispatch_null_count = count(); } else { @sbh_dispatch_rq_count = count(); }
+  delete(@sbh_dispatch_request_start[tid]);
+}
+
+kprobe:scx_io_policy_dispatch_rqptr { @sbh_policy_dispatch_rqptr_count = count(); @sbh_policy_dispatch_rqptr_start[tid] = nsecs; }
+kretprobe:scx_io_policy_dispatch_rqptr /@sbh_policy_dispatch_rqptr_start[tid]/
+{
+  $delta_ns = nsecs - @sbh_policy_dispatch_rqptr_start[tid];
+  @sbh_policy_dispatch_rqptr_ns = stats($delta_ns);
+  @sbh_policy_dispatch_rqptr_us = hist($delta_ns / 1000);
+  if (retval == 0) { @sbh_policy_dispatch_null_count = count(); } else { @sbh_policy_dispatch_ptr_count = count(); }
+  delete(@sbh_policy_dispatch_rqptr_start[tid]);
+}
+
+kprobe:scx_io_completed_request { @sbh_completed_request_count = count(); @sbh_completed_request_start[tid] = nsecs; }
+kretprobe:scx_io_completed_request /@sbh_completed_request_start[tid]/
+{
+  $delta_ns = nsecs - @sbh_completed_request_start[tid];
+  @sbh_completed_request_ns = stats($delta_ns);
+  @sbh_completed_request_us = hist($delta_ns / 1000);
+  delete(@sbh_completed_request_start[tid]);
+}
+
+kprobe:scx_io_prepare_request { @sbh_prepare_request_count = count(); @sbh_prepare_request_start[tid] = nsecs; }
+kretprobe:scx_io_prepare_request /@sbh_prepare_request_start[tid]/
+{
+  @sbh_prepare_request_ns = stats(nsecs - @sbh_prepare_request_start[tid]);
+  delete(@sbh_prepare_request_start[tid]);
+}
+
+kprobe:scx_io_finish_request { @sbh_finish_request_count = count(); @sbh_finish_request_start[tid] = nsecs; }
+kretprobe:scx_io_finish_request /@sbh_finish_request_start[tid]/
+{
+  @sbh_finish_request_ns = stats(nsecs - @sbh_finish_request_start[tid]);
+  delete(@sbh_finish_request_start[tid]);
+}
+
+kprobe:scx_io_allow_merge { @sbh_allow_merge_count = count(); @sbh_allow_merge_start[tid] = nsecs; }
+kretprobe:scx_io_allow_merge /@sbh_allow_merge_start[tid]/
+{
+  @sbh_allow_merge_ns = stats(nsecs - @sbh_allow_merge_start[tid]);
+  delete(@sbh_allow_merge_start[tid]);
+}
+
+kprobe:scx_io_bio_merge { @sbh_bio_merge_count = count(); @sbh_bio_merge_start[tid] = nsecs; }
+kretprobe:scx_io_bio_merge /@sbh_bio_merge_start[tid]/
+{
+  @sbh_bio_merge_ns = stats(nsecs - @sbh_bio_merge_start[tid]);
+  delete(@sbh_bio_merge_start[tid]);
+}
+
+END
+{
+  printf("SCX_IO_BPF_HOOK_COST_SUMMARY_BEGIN\n");
+  print(@sbh_insert_requests_count);
+  print(@sbh_insert_requests_ns);
+  print(@sbh_insert_requests_us);
+  print(@sbh_dispatch_request_count);
+  print(@sbh_dispatch_request_ns);
+  print(@sbh_dispatch_request_us);
+  print(@sbh_dispatch_null_count);
+  print(@sbh_dispatch_rq_count);
+  print(@sbh_policy_dispatch_rqptr_count);
+  print(@sbh_policy_dispatch_rqptr_ns);
+  print(@sbh_policy_dispatch_rqptr_us);
+  print(@sbh_policy_dispatch_null_count);
+  print(@sbh_policy_dispatch_ptr_count);
+  print(@sbh_completed_request_count);
+  print(@sbh_completed_request_ns);
+  print(@sbh_completed_request_us);
+  print(@sbh_prepare_request_count);
+  print(@sbh_prepare_request_ns);
+  print(@sbh_finish_request_count);
+  print(@sbh_finish_request_ns);
+  print(@sbh_allow_merge_count);
+  print(@sbh_allow_merge_ns);
+  print(@sbh_bio_merge_count);
+  print(@sbh_bio_merge_ns);
+  printf("SCX_IO_BPF_HOOK_COST_SUMMARY_END\n");
+}

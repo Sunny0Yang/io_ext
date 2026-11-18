@@ -1,0 +1,24 @@
+{
+  "name": "spedf_large_small_8",
+  "tier": 2,
+  "match": "partial",
+  "oracle_source": "algorithm_derivation (tests/io/q_sp_edf_model.py scenario s2_large_small_8)",
+  "oracle_ref": "q_sp_edf.bpf.c:108-126 large_should_run false while small lanes non-empty, burst budget left (re-armed at first insert, :215-216) and large head deadline not expired (+20ms, :13); :133 SMALL_READ drains first; :115-117 both small lanes empty -> larges run. Large submitted FIRST still issues 5th. Expected ISSUE: 102400,102656,102912,103168,204800,208896,212992,217088.",
+  "expected_dispatch_order": [
+    {"sector": 102400, "op": "read", "nr_sectors": 8},
+    {"sector": 102656, "op": "read", "nr_sectors": 8},
+    {"sector": 102912, "op": "read", "nr_sectors": 8},
+    {"sector": 103168, "op": "read", "nr_sectors": 8},
+    {"sector": 204800, "op": "read", "nr_sectors": 128},
+    {"sector": 208896, "op": "read", "nr_sectors": 128},
+    {"sector": 212992, "op": "read", "nr_sectors": 128},
+    {"sector": 217088, "op": "read", "nr_sectors": 128}
+  ],
+  "partial_constraints": [
+    {"all_sectors_present": [102400, 102656, 102912, 103168, 204800, 208896, 212992, 217088]},
+    {"small_before_large": true, "small_sectors": [102400, 102656, 102912, 103168], "large_sectors": [204800, 208896, 212992, 217088]},
+    {"sectors_before_sectors": {"first": [102400, 102656, 102912, 103168], "second": [204800, 208896, 212992, 217088]}}
+  ],
+  "expected_merge": false,
+  "notes": "Phase-0 strict standard: async_batch 8-request single batch, partial ISSUE-order assertion with EXPLICIT small/large sector sets (the previous golden's small_before_large had no sector sets, which made the constraint vacuous in compare_expect.py). Expected order is also fully derivable exactly (within-lane submission == sector ASC, tie-robust) but partial is kept per plan: the invariant under test is smalls-before-larges, and the exact per-lane order is pinned by M01/M04."
+}

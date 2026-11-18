@@ -1,0 +1,19 @@
+{
+  "name": "wedf_sector_asc_8",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "q_wedf 5ms-window locality rule: userspace/q_wedf.bpf.c:53-64 wedf_before — when two deadlines lie within +-5ms (Q_WEDF_WINDOW_NS, q_wedf.bpf.c:12) the comparator falls through to sector-ascending (q_wedf.bpf.c:63); one async_batch of same-op reads has us-scale arrival spread -> all deadlines mutually in-window regardless of arrival order -> single sorted queue is sector-ascending; cgroup_dispatch pops head (q_wedf.bpf.c:104-105). Derived by tests/q_wedf_model.py (actual mode, scenario W1) which mirrors wedf_insert/wedf_before line-by-line.",
+  "expected_dispatch_order": [
+    {"sector": 2560, "op": "read", "nr_sectors": 8},
+    {"sector": 2624, "op": "read", "nr_sectors": 8},
+    {"sector": 2688, "op": "read", "nr_sectors": 8},
+    {"sector": 2752, "op": "read", "nr_sectors": 8},
+    {"sector": 2816, "op": "read", "nr_sectors": 8},
+    {"sector": 2880, "op": "read", "nr_sectors": 8},
+    {"sector": 2944, "op": "read", "nr_sectors": 8},
+    {"sector": 3008, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "Anti-FIFO discriminator: submission order (3008,2944,...,2560) is the exact REVERSE of the expected ISSUE order. The ISSUE order coincides with mq-deadline C-LOOK here, but for a different reason — q_wedf has no head-bias/C-LOOK scan; the ascending order comes from the 5ms-window + sector tie-break inside wedf_before (q_wedf.bpf.c:56-63). Sectors are 64 apart (non-adjacent, above the partition-scan zone since Phase-3 re-space) so no block-layer merge can occur (q_wedf registers no allow_merge hook — userspace/MERGE.md:126); expected_merge=false keeps match_exact_dispatch strict."
+}

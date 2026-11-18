@@ -1,0 +1,217 @@
+#!/usr/bin/env bpftrace
+/*
+ * scx_io policy hot-switch / detach monitor.
+ *
+ * Source targets from block/iosched_ext.c:
+ * - iosched_reg_ctx: policy attach/replace entry point.
+ * - iosched_unreg_ctx: policy detach entry point.
+ * - scx_io_policy_prepare_teardown: enters QUIESCING and bumps bypass epoch.
+ * - scx_io_policy_schedule_teardown: queues teardown_work.
+ * - scx_io_policy_teardown_workfn: workqueue evacuation loop.
+ * - scx_io_policy_note_dispatch: decrements policy->managed_inflight.
+ * - scx_io_policy_free: teardown complete; policy is about to be freed.
+ *
+ * Reason enum: 0=detach, 1=replace, 2=offline.
+ */
+
+config = {
+  unstable_addr=enable
+}
+
+BEGIN
+{
+  printf("SCX_IO_POLICY_SWITCH_START\n");
+  printf("targets=iosched_reg_ctx,iosched_unreg_ctx,scx_io_policy_prepare_teardown,scx_io_policy_teardown_workfn\n");
+  printf("reason_enum=0:detach,1:replace,2:offline units=count,us\n");
+}
+
+kprobe:iosched_reg_ctx
+{
+  @sps_reg_ctx_count = count();
+  @sps_reg_start_ns[tid] = nsecs;
+}
+
+kretprobe:iosched_reg_ctx
+/@sps_reg_start_ns[tid]/
+{
+   $delta_us = (nsecs - @sps_reg_start_ns[tid]) / 1000;
+   @sps_reg_ctx_us = stats($delta_us);
+   @sps_reg_ctx_retval[retval] = count();
+  if (retval == 0) {
+    if (@sps_last_policy_free_ns) {
+      $free_to_reg_us = (nsecs - @sps_last_policy_free_ns) / 1000;
+      @sps_free_to_reg_us = stats($free_to_reg_us);
+      @sps_last_policy_free_ns = 0;
+    }
+    @sps_last_reg_success_ns = nsecs;
+  }
+   delete(@sps_reg_start_ns[tid]);
+}
+
+kprobe:iosched_unreg_ctx
+{
+   @sps_unreg_ctx_count = count();
+  @sps_last_unreg_ns = nsecs;
+}
+
+kprobe:scx_io_policy_prepare_teardown
+{
+  $policy = (struct scx_io_policy *)arg0;
+  $reason = arg2;
+  @sps_prepare_count = count();
+  @sps_prepare_by_reason[$reason] = count();
+  @sps_prepare_start_ns[tid] = nsecs;
+  @sps_prepare_policy[tid] = arg0;
+  @sps_prepare_reason[tid] = $reason;
+   @sps_inflight_at_prepare = stats($policy->managed_inflight.counter);
+   @sps_stall_rounds_at_prepare = stats($policy->stall_rounds);
+  if ($reason == 0) {
+    @sps_prepare_detach_count = count();
+    if (@sps_last_unreg_ns) {
+      $unreg_to_prepare_us = (nsecs - @sps_last_unreg_ns) / 1000;
+      @sps_detach_unreg_to_prepare_us = stats($unreg_to_prepare_us);
+    }
+  }
+  if ($reason == 1) { @sps_prepare_replace_count = count(); }
+  if ($reason == 2) { @sps_prepare_offline_count = count(); }
+}
+
+kretprobe:scx_io_policy_prepare_teardown
+/@sps_prepare_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sps_prepare_start_ns[tid]) / 1000;
+  @sps_prepare_us = stats($delta_us);
+  @sps_prepare_retval[retval] = count();
+  if (retval == 0) {
+    $policy_ptr = @sps_prepare_policy[tid];
+    @sps_prepare_ok_count = count();
+    @sps_prepare_ns[$policy_ptr] = @sps_prepare_start_ns[tid];
+    @sps_policy_reason[$policy_ptr] = @sps_prepare_reason[tid];
+  }
+  delete(@sps_prepare_start_ns[tid]);
+  delete(@sps_prepare_policy[tid]);
+  delete(@sps_prepare_reason[tid]);
+}
+
+kprobe:scx_io_policy_schedule_teardown
+{
+  $policy = (struct scx_io_policy *)arg0;
+  $work = &$policy->teardown_work.work;
+  @sps_schedule_count = count();
+  @sps_work_policy[$work] = arg0;
+}
+
+kprobe:scx_io_policy_teardown_workfn
+{
+  $policy_ptr = @sps_work_policy[arg0];
+  if ($policy_ptr) {
+    $policy = (struct scx_io_policy *)$policy_ptr;
+    @sps_workfn_count = count();
+    @sps_workfn_start_ns[tid] = nsecs;
+    @sps_workfn_policy[tid] = $policy_ptr;
+    @sps_inflight_at_work = stats($policy->managed_inflight.counter);
+    @sps_stall_rounds_at_work = stats($policy->stall_rounds);
+    if (@sps_prepare_ns[$policy_ptr]) {
+      $prepare_to_work_us = (nsecs - @sps_prepare_ns[$policy_ptr]) / 1000;
+      @sps_prepare_to_work_us = stats($prepare_to_work_us);
+      @sps_prepare_to_work_us_hist = hist($prepare_to_work_us);
+    }
+  }
+}
+
+kretprobe:scx_io_policy_teardown_workfn
+/@sps_workfn_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sps_workfn_start_ns[tid]) / 1000;
+  @sps_workfn_us = stats($delta_us);
+  @sps_workfn_us_hist = hist($delta_us);
+  @sps_workfn_return_count = count();
+  delete(@sps_workfn_start_ns[tid]);
+  delete(@sps_workfn_policy[tid]);
+}
+
+kprobe:scx_io_policy_note_dispatch
+{
+  $policy = (struct scx_io_policy *)arg0;
+  if ($policy && $policy->state == 1) {
+    @sps_quiescing_dispatch_count = count();
+    @sps_inflight_before_quiescing_dispatch = stats($policy->managed_inflight.counter);
+    @sps_quiescing_dispatch_by_policy[arg0] = count();
+  }
+}
+
+kprobe:scx_io_policy_free
+{
+  if (@sps_last_unreg_ns) {
+    $unreg_to_free_us = (nsecs - @sps_last_unreg_ns) / 1000;
+    @sps_detach_unreg_to_free_us = stats($unreg_to_free_us);
+    @sps_last_unreg_ns = 0;
+  }
+  if (@sps_last_reg_success_ns) {
+    $reg_to_free_us = (nsecs - @sps_last_reg_success_ns) / 1000;
+    @sps_reg_to_free_us = stats($reg_to_free_us);
+  }
+  if (@sps_prepare_ns[arg0]) {
+    $total_us = (nsecs - @sps_prepare_ns[arg0]) / 1000;
+    @sps_prepare_to_free_us = stats($total_us);
+    @sps_prepare_to_free_us_hist = hist($total_us);
+  }
+  @sps_policy_free_count = count();
+  @sps_last_policy_free_ns = nsecs;
+  delete(@sps_prepare_ns[arg0]);
+  delete(@sps_policy_reason[arg0]);
+}
+
+kprobe:scx_io_bypass_request
+/@sps_last_policy_free_ns/
+{
+  $free_to_bypass_us = (nsecs - @sps_last_policy_free_ns) / 1000;
+  @sps_free_to_first_bypass_us = stats($free_to_bypass_us);
+  @sps_bypass_after_free_count = count();
+  @sps_last_policy_free_ns = 0;
+}
+
+END
+{
+  printf("SCX_IO_POLICY_SWITCH_SUMMARY_BEGIN\n");
+  print(@sps_reg_ctx_count);
+  print(@sps_reg_ctx_us);
+  print(@sps_reg_ctx_retval);
+  print(@sps_unreg_ctx_count);
+  print(@sps_prepare_count);
+  print(@sps_prepare_detach_count);
+  print(@sps_prepare_replace_count);
+  print(@sps_prepare_offline_count);
+  print(@sps_prepare_ok_count);
+  print(@sps_prepare_by_reason);
+  print(@sps_prepare_us);
+  print(@sps_prepare_retval);
+  print(@sps_schedule_count);
+  print(@sps_workfn_count);
+  print(@sps_prepare_to_work_us);
+  print(@sps_prepare_to_work_us_hist);
+  print(@sps_workfn_us);
+  print(@sps_workfn_us_hist);
+  print(@sps_workfn_return_count);
+  print(@sps_policy_free_count);
+  print(@sps_prepare_to_free_us);
+  print(@sps_prepare_to_free_us_hist);
+  print(@sps_detach_unreg_to_prepare_us);
+  print(@sps_detach_unreg_to_free_us);
+  print(@sps_reg_to_free_us);
+  print(@sps_free_to_reg_us);
+  print(@sps_free_to_first_bypass_us);
+  print(@sps_bypass_after_free_count);
+  print(@sps_inflight_at_prepare);
+  print(@sps_inflight_at_work);
+  print(@sps_inflight_before_quiescing_dispatch);
+  print(@sps_stall_rounds_at_prepare);
+  print(@sps_stall_rounds_at_work);
+  print(@sps_quiescing_dispatch_count);
+  print(@sps_quiescing_dispatch_by_policy);
+  printf("SCX_IO_POLICY_SWITCH_SUMMARY_END\n");
+  clear(@sps_prepare_ns);
+  clear(@sps_work_policy);
+  clear(@sps_policy_reason);
+  clear(@sps_prepare_reason);
+}

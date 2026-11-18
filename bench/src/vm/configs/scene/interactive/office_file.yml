@@ -1,0 +1,34 @@
+name: "办公文档场景"
+id: "office_file"
+type: "interactive"
+class_name: "LibreOfficeScene"
+module_path: "src.vm.scene.interactive.office_file"
+parameters:
+  # 测试数据配置
+  test_data:
+    large_doc: "src/vm/assets/interactive/office_file/stress_doc.odt"
+    spreadsheet_data: "src/vm/assets/interactive/office_file/big_data.ods"
+    presentation_template: "src/vm/assets/interactive/office_file/slide_template.odp"
+    min_doc_size_mb: 10
+    spreadsheet_rows: 100000
+  
+  # 压力测试级别配置  
+  stress_levels:
+    document_iterations: 2
+    slide_count: 10
+    cursor_movements: 50
+    text_modifications: 30
+    text_deletions: 20
+    text_additions: 25
+  
+  # 人机模拟参数
+  human_simulation:
+    typing_delay_range: [0.01, 0.02]  # 字符输入间隔时间（秒）
+    thinking_delay_range: [0.01, 0.02]  # "思考"暂停时间（秒）
+    operation_delay_range: [0.01, 0.02]  # 操作间隔时间（秒）
+  
+  # 是否启用人机模拟
+  human_simulation_enabled: true
+  
+  # 结果输出目录
+  output_dir: "./test_results"

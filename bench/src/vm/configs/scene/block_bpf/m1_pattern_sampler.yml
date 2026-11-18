@@ -1,0 +1,15 @@
+name: "M1 solo load-pattern per-request sampler"
+id: "m1_pattern_sampler"
+type: "system"
+class_name: "M1PatternSamplerScene"
+module_path: "vm.scene.block_bpf.m1_pattern_sampler"
+parameters:
+  duration: 300
+  output_dir: "./test_results/isol_bench/rig_m1/m1_pattern_sampler"
+  output_file: "./test_results/isol_bench/rig_m1/m1_pattern_sampler/m1_pattern_sampler.bpftrace.log"
+  summary_file: "./test_results/isol_bench/rig_m1/m1_pattern_sampler/m1_pattern_sampler_summary.json"
+  require_events: false
+  privilege:
+    method: "sudo_nopasswd"
+    askpass_script: ""
+    env_var: "SUDO_PASSWORD"

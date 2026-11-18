@@ -1,0 +1,13 @@
+[lc_randread]
+filename=__DEV__
+ioengine=io_uring
+direct=1
+rw=randread
+bs=4k
+iodepth=16
+numjobs=1
+runtime=15
+time_based=1
+group_reporting=1
+clat_percentiles=1
+percentile_list=99:99.9

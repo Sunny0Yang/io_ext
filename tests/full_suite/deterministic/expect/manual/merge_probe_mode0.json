@@ -1,0 +1,11 @@
+{
+  "name": "merge_probe_mode0_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 1,
+    "complete_count_min": 1,
+    "merge_count_max": 0
+  },
+  "notes": "mode=0 DENY_ALL: no merges allowed, complete_count == insert_count"
+}

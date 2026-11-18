@@ -1,0 +1,1874 @@
+benchmark_name: isol_bench rig native D3 grid (tree) (kvmhost/sdb, session5 B1)
+description: 'Session 5 B1 native D3 treeleaf+treesub grid: 1 LC + 4 BE, knobs x mounts per RIG_IOX_SESSION5_DESIGN.'
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_native/d3s5t/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_native/d3s5t/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_native/d3s5t/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_native/d3s5t/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+io_ext_policy_profiles:
+  N_none:
+    name: rig native none
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_kyber:
+    name: rig native kyber
+    target_device: sdb
+    scheduler: kyber
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_bfq:
+    name: rig native bfq
+    target_device: sdb
+    scheduler: bfq
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_mq_deadline:
+    name: rig native mq_deadline
+    target_device: sdb
+    scheduler: mq-deadline
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_io_max:
+    name: rig native io_max
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_io_latency:
+    name: rig native io_latency
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_io_cost:
+    name: rig native io_cost
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  N_io_prio_class:
+    name: rig native io_prio_class
+    target_device: sdb
+    scheduler: mq-deadline
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_io_bfq_weight:
+    name: rig native io_bfq_weight
+    target_device: sdb
+    scheduler: bfq
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+tenant_groups:
+  d3s5_none_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_none_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_none_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/none/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_none_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_none_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_none_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_none_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/none/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_none_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_kyber_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_kyber_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_kyber_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: kyber
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/kyber/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_kyber_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_kyber_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_kyber_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_kyber_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: kyber
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/kyber/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_kyber_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_bfq_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_bfq_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_bfq_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/bfq/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_bfq_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_bfq_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_bfq_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_bfq_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/bfq/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_bfq_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_mq_deadline_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_mq_deadline_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_mq_deadline_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/mq_deadline/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_mq_deadline_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_mq_deadline_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_mq_deadline_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_mq_deadline_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/mq_deadline/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_mq_deadline_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_io_max_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_io_max_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_io_max_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_max_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: 1073741824
+              wbps: 1073741824
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_io_max_calib_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_calib_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_io_max_calib_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max_calib/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_calib_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_io_max_calib_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_calib_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_max_calib_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max_calib/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_calib_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: 1073741824
+              wbps: 1073741824
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_io_latency_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_latency_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_io_latency_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_latency/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_latency_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+            io_latency:
+              target: 10
+  d3s5_io_latency_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_latency_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_latency_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_latency/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_latency_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+  d3s5_io_cost_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_cost_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_io_cost_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_cost/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_cost_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 10000
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 2706339840
+                rseqiops: 786432
+                rrandiops: 786432
+                wbps: 1063126016
+                wseqiops: 135560
+                wrandiops: 130734
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 99.0
+                rlat: 15
+                wpct: 99.0
+                wlat: 15
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+  d3s5_io_cost_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_cost_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_cost_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_cost/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_cost_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 1
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 2706339840
+                rseqiops: 786432
+                rrandiops: 786432
+                wbps: 1063126016
+                wseqiops: 135560
+                wrandiops: 130734
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 99.0
+                rlat: 15
+                wpct: 99.0
+                wlat: 15
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+  d3s5_io_prio_class_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_prio_class_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_io_prio_class_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_prio_class/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_prio_class_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+            io_prio_class: promote-to-rt
+  d3s5_io_prio_class_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_prio_class_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_prio_class_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_prio_class/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_prio_class_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+            io_prio_class: idle
+  d3s5_io_bfq_weight_treeleaf_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_bfq_weight_treeleaf_lc
+    collapsed_scene_id: ib_rig_d3s5_io_bfq_weight_treeleaf_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_bfq_weight/treeleaf/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_bfq_weight_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+            io_bfq_weight: 1000
+  d3s5_io_bfq_weight_treeleaf_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_bfq_weight_treeleaf_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_bfq_weight_treeleaf_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_bfq_weight/treeleaf/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_bfq_weight_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+            io_bfq_weight: 1
+  d3s5_io_max_treesub_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_treesub_lc
+    collapsed_scene_id: ib_rig_d3s5_io_max_treesub_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max/treesub/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_treesub/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: &id001
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_max_treesub/lc
+            controllers:
+            - io
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_max_treesub/be
+            controllers:
+            - io
+            io_max:
+              rbps: 1073741824
+              wbps: 1073741824
+              riops: max
+              wiops: max
+  d3s5_io_max_treesub_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_treesub_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_max_treesub_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max/treesub/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_treesub/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: *id001
+  d3s5_io_max_calib_treesub_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_calib_treesub_lc
+    collapsed_scene_id: ib_rig_d3s5_io_max_calib_treesub_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max_calib/treesub/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_calib_treesub/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: &id002
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_max_calib_treesub/lc
+            controllers:
+            - io
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_max_calib_treesub/be
+            controllers:
+            - io
+            io_max:
+              rbps: 220200000
+              wbps: 220200000
+              riops: max
+              wiops: max
+  d3s5_io_max_calib_treesub_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_max_calib_treesub_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_max_calib_treesub_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_max_calib/treesub/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_max_calib_treesub/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: *id002
+  d3s5_io_latency_treesub_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_latency_treesub_lc
+    collapsed_scene_id: ib_rig_d3s5_io_latency_treesub_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_latency/treesub/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_latency_treesub/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: &id003
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_latency_treesub/lc
+            controllers:
+            - io
+            io_latency:
+              target: 10
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_latency_treesub/be
+            controllers:
+            - io
+  d3s5_io_latency_treesub_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_latency_treesub_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_latency_treesub_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_latency/treesub/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_latency_treesub/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: *id003
+  d3s5_io_cost_treesub_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_cost_treesub_lc
+    collapsed_scene_id: ib_rig_d3s5_io_cost_treesub_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_cost/treesub/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_cost_treesub/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 2706339840
+                rseqiops: 786432
+                rrandiops: 786432
+                wbps: 1063126016
+                wseqiops: 135560
+                wrandiops: 130734
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 99.0
+                rlat: 15
+                wpct: 99.0
+                wlat: 15
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+          cgroups: &id004
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_cost_treesub/lc
+            controllers:
+            - io
+            io_weight: 10000
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_cost_treesub/be
+            controllers:
+            - io
+            io_weight: 1
+  d3s5_io_cost_treesub_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_cost_treesub_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_cost_treesub_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_cost/treesub/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_cost_treesub/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 2706339840
+                rseqiops: 786432
+                rrandiops: 786432
+                wbps: 1063126016
+                wseqiops: 135560
+                wrandiops: 130734
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 99.0
+                rlat: 15
+                wpct: 99.0
+                wlat: 15
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+          cgroups: *id004
+  d3s5_io_prio_class_treesub_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_prio_class_treesub_lc
+    collapsed_scene_id: ib_rig_d3s5_io_prio_class_treesub_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_prio_class/treesub/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_prio_class_treesub/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: &id005
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_prio_class_treesub/lc
+            controllers:
+            - io
+            io_prio_class: promote-to-rt
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_prio_class_treesub/be
+            controllers:
+            - io
+            io_prio_class: idle
+  d3s5_io_prio_class_treesub_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_prio_class_treesub_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_prio_class_treesub_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_prio_class/treesub/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_prio_class_treesub/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: *id005
+  d3s5_io_bfq_weight_treesub_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_bfq_weight_treesub_lc
+    collapsed_scene_id: ib_rig_d3s5_io_bfq_weight_treesub_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_bfq_weight/treesub/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_bfq_weight_treesub/lc/lc_t1
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: &id006
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_bfq_weight_treesub/lc
+            controllers:
+            - io
+            io_bfq_weight: 1000
+          - path: /sys/fs/cgroup/ib_rig_d3nt_io_bfq_weight_treesub/be
+            controllers:
+            - io
+            io_bfq_weight: 1
+  d3s5_io_bfq_weight_treesub_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3s5_io_bfq_weight_treesub_be_t{idx1}
+    collapsed_scene_id: ib_rig_d3s5_io_bfq_weight_treesub_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d3s5/io_bfq_weight/treesub/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3nt_io_bfq_weight_treesub/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+          cgroups: *id006
+test_sequences:
+- sequence_id: D3LC_rread_4k_native_none_treeleaf
+  name: D3 LC rread_4k native none treeleaf
+  io_ext_policy: N_none
+  steps:
+  - name: 1 LC + 4 BE native none treeleaf
+    tenant_groups:
+    - d3s5_none_treeleaf_lc
+    - d3s5_none_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_kyber_treeleaf
+  name: D3 LC rread_4k native kyber treeleaf
+  io_ext_policy: N_kyber
+  steps:
+  - name: 1 LC + 4 BE native kyber treeleaf
+    tenant_groups:
+    - d3s5_kyber_treeleaf_lc
+    - d3s5_kyber_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_bfq_treeleaf
+  name: D3 LC rread_4k native bfq treeleaf
+  io_ext_policy: N_bfq
+  steps:
+  - name: 1 LC + 4 BE native bfq treeleaf
+    tenant_groups:
+    - d3s5_bfq_treeleaf_lc
+    - d3s5_bfq_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_mq_deadline_treeleaf
+  name: D3 LC rread_4k native mq_deadline treeleaf
+  io_ext_policy: N_mq_deadline
+  steps:
+  - name: 1 LC + 4 BE native mq_deadline treeleaf
+    tenant_groups:
+    - d3s5_mq_deadline_treeleaf_lc
+    - d3s5_mq_deadline_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_max_treeleaf
+  name: D3 LC rread_4k native io_max treeleaf
+  io_ext_policy: N_io_max
+  steps:
+  - name: 1 LC + 4 BE native io_max treeleaf
+    tenant_groups:
+    - d3s5_io_max_treeleaf_lc
+    - d3s5_io_max_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_max_calib_treeleaf
+  name: D3 LC rread_4k native io_max_calib treeleaf
+  io_ext_policy: N_io_max
+  steps:
+  - name: 1 LC + 4 BE native io_max_calib treeleaf
+    tenant_groups:
+    - d3s5_io_max_calib_treeleaf_lc
+    - d3s5_io_max_calib_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_latency_treeleaf
+  name: D3 LC rread_4k native io_latency treeleaf
+  io_ext_policy: N_io_latency
+  steps:
+  - name: 1 LC + 4 BE native io_latency treeleaf
+    tenant_groups:
+    - d3s5_io_latency_treeleaf_lc
+    - d3s5_io_latency_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_cost_treeleaf
+  name: D3 LC rread_4k native io_cost treeleaf
+  io_ext_policy: N_io_cost
+  steps:
+  - name: 1 LC + 4 BE native io_cost treeleaf
+    tenant_groups:
+    - d3s5_io_cost_treeleaf_lc
+    - d3s5_io_cost_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_prio_class_treeleaf
+  name: D3 LC rread_4k native io_prio_class treeleaf
+  io_ext_policy: N_io_prio_class
+  steps:
+  - name: 1 LC + 4 BE native io_prio_class treeleaf
+    tenant_groups:
+    - d3s5_io_prio_class_treeleaf_lc
+    - d3s5_io_prio_class_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_bfq_weight_treeleaf
+  name: D3 LC rread_4k native io_bfq_weight treeleaf
+  io_ext_policy: N_io_bfq_weight
+  steps:
+  - name: 1 LC + 4 BE native io_bfq_weight treeleaf
+    tenant_groups:
+    - d3s5_io_bfq_weight_treeleaf_lc
+    - d3s5_io_bfq_weight_treeleaf_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_max_treesub
+  name: D3 LC rread_4k native io_max treesub
+  io_ext_policy: N_io_max
+  steps:
+  - name: 1 LC + 4 BE native io_max treesub
+    tenant_groups:
+    - d3s5_io_max_treesub_lc
+    - d3s5_io_max_treesub_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_max_calib_treesub
+  name: D3 LC rread_4k native io_max_calib treesub
+  io_ext_policy: N_io_max
+  steps:
+  - name: 1 LC + 4 BE native io_max_calib treesub
+    tenant_groups:
+    - d3s5_io_max_calib_treesub_lc
+    - d3s5_io_max_calib_treesub_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_latency_treesub
+  name: D3 LC rread_4k native io_latency treesub
+  io_ext_policy: N_io_latency
+  steps:
+  - name: 1 LC + 4 BE native io_latency treesub
+    tenant_groups:
+    - d3s5_io_latency_treesub_lc
+    - d3s5_io_latency_treesub_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_cost_treesub
+  name: D3 LC rread_4k native io_cost treesub
+  io_ext_policy: N_io_cost
+  steps:
+  - name: 1 LC + 4 BE native io_cost treesub
+    tenant_groups:
+    - d3s5_io_cost_treesub_lc
+    - d3s5_io_cost_treesub_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_prio_class_treesub
+  name: D3 LC rread_4k native io_prio_class treesub
+  io_ext_policy: N_io_prio_class
+  steps:
+  - name: 1 LC + 4 BE native io_prio_class treesub
+    tenant_groups:
+    - d3s5_io_prio_class_treesub_lc
+    - d3s5_io_prio_class_treesub_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_native_io_bfq_weight_treesub
+  name: D3 LC rread_4k native io_bfq_weight treesub
+  io_ext_policy: N_io_bfq_weight
+  steps:
+  - name: 1 LC + 4 BE native io_bfq_weight treesub
+    tenant_groups:
+    - d3s5_io_bfq_weight_treesub_lc
+    - d3s5_io_bfq_weight_treesub_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+default_sequence: D3LC_rread_4k_native_none_treeleaf
+fail_fast_on_scene_error: true

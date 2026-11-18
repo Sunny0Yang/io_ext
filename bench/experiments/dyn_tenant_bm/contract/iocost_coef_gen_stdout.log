@@ -1,0 +1,4 @@
+Warning: Permanently added '127.0.0.1' (ED25519) to the list of known hosts.
+chattr: Operation not supported while setting flags on iocost-coef-fio.testfile
+259:0 rbps=1877961028 rseqiops=436504 rrandiops=504812 wbps=1895474286 wseqiops=436118 wrandiops=324051
+PROBE-DONE

@@ -1,0 +1,103 @@
+#!/usr/bin/env bpftrace
+/*
+ * scx_io lock contention monitor.
+ *
+ * Requires CONFIG_LOCKDEP and CONFIG_LOCK_STAT for lock:lock_contended and
+ * lock:lock_acquired. The lock class names come from block/iosched_ext.c:
+ * - &data->lock, &policy->lock, &hctx->lock, &blkcg->iosched_sem, arbiter_lock, &hdata->fallback_lock.
+ */
+
+BEGIN
+{
+  printf("SCX_IO_LOCK_CONTENTION_START\n");
+  printf("Tracing scx_io locks... (Press Ctrl+C to stop and view summaries)\n");
+  printf("tracepoints=lock:lock_contended,lock:lock_acquired filter=scx_io_lock_classes units=count,us\n");
+}
+
+tracepoint:lock:lock_contended
+{
+  $name = str(args->name);
+  /* 【修改点】：将 "&data->fallback_lock" 更改为 "&hdata->fallback_lock" */
+  if ($name == "&data->lock" || $name == "&policy->lock" || $name == "&hctx->lock" ||
+      $name == "&blkcg->iosched_sem" || $name == "arbiter_lock" || $name == "&hdata->fallback_lock") {
+    
+    @slc_lock_contended_count = count();
+    @slc_contended_by_name[$name] = count();
+    @slc_wait_start_ns[tid, args->lockdep_addr] = nsecs;
+    
+    /* 精准记录到底是哪条代码路径触发了这几把锁的竞争，保留前 5 层栈即可 */
+    @slc_contended_stacks[$name, kstack(5)] = count();
+
+    if ($name == "&data->lock") { @slc_data_lock_contended_count = count(); }
+    if ($name == "&policy->lock") { @slc_policy_lock_contended_count = count(); }
+    if ($name == "&hctx->lock") { @slc_hctx_lock_contended_count = count(); }
+    if ($name == "&blkcg->iosched_sem") { @slc_iosched_sem_contended_count = count(); }
+    if ($name == "arbiter_lock") { @slc_arbiter_lock_contended_count = count(); }
+    if ($name == "&hdata->fallback_lock") { @slc_fallback_lock_contended_count = count(); }
+  }
+}
+
+tracepoint:lock:lock_acquired
+/@slc_wait_start_ns[tid, args->lockdep_addr]/
+{
+  $name = str(args->name);
+  if ($name == "&data->lock" || $name == "&policy->lock" || $name == "&hctx->lock" ||
+      $name == "&blkcg->iosched_sem" || $name == "arbiter_lock" || $name == "&hdata->fallback_lock") {
+    
+    $delta_us = (nsecs - @slc_wait_start_ns[tid, args->lockdep_addr]) / 1000;
+    @slc_lock_acquired_after_contention_count = count();
+    @slc_wait_us = stats($delta_us);
+    @slc_wait_us_hist = hist($delta_us);
+    @slc_wait_us_by_name[$name] = stats($delta_us);
+    
+    if ($name == "&data->lock") { @slc_data_lock_wait_us = stats($delta_us); }
+    if ($name == "&policy->lock") { @slc_policy_lock_wait_us = stats($delta_us); }
+    if ($name == "&hctx->lock") { @slc_hctx_lock_wait_us = stats($delta_us); }
+    if ($name == "&blkcg->iosched_sem") { @slc_iosched_sem_wait_us = stats($delta_us); }
+    if ($name == "arbiter_lock") { @slc_arbiter_lock_wait_us = stats($delta_us); }
+    if ($name == "&hdata->fallback_lock") { @slc_fallback_lock_wait_us = stats($delta_us); @total_acquisitions = count();}
+  }
+  
+  /* 规避 Return value discarded 警告的小技巧（将其赋值给一个临时变量即可，或者直接忽略警告） */
+  $dummy = delete(@slc_wait_start_ns[tid, args->lockdep_addr]);
+}
+
+END
+{
+  printf("\nSCX_IO_LOCK_CONTENTION_SUMMARY_BEGIN\n");
+  
+  printf("\n--- Global Stats ---\n");
+  print(@slc_lock_contended_count);
+  print(@slc_lock_acquired_after_contention_count);
+  print(@slc_wait_us);
+  
+  printf("\n--- Contention Count by Lock ---\n");
+  print(@slc_contended_by_name);
+  print(@slc_data_lock_contended_count);
+  print(@slc_policy_lock_contended_count);
+  print(@slc_hctx_lock_contended_count);
+  print(@slc_iosched_sem_contended_count);
+  print(@slc_arbiter_lock_contended_count);
+  print(@slc_fallback_lock_contended_count);
+
+  printf("\n--- Wait Time (us) by Lock ---\n");
+  print(@slc_wait_us_hist);
+  print(@slc_wait_us_by_name);
+  print(@slc_data_lock_wait_us);
+  print(@slc_policy_lock_wait_us);
+  print(@slc_hctx_lock_wait_us);
+  print(@slc_iosched_sem_wait_us);
+  print(@slc_arbiter_lock_wait_us);
+  print(@slc_fallback_lock_wait_us);
+  
+  printf("\n--- Stacktraces for Contended Locks ---\n");
+  print(@slc_contended_stacks);
+
+  printf("\n--- Lock Acquisition Proof ---\n");
+  print(@total_acquisitions);
+
+  printf("SCX_IO_LOCK_CONTENTION_SUMMARY_END\n");
+  
+  clear(@slc_wait_start_ns);
+  clear(@slc_contended_stacks);
+}

@@ -1,0 +1,431 @@
+benchmark_name: 'RQ5 Phase C dynamic pressure: BE LOW->HIGH rate steps under NONE/IO_WEIGHT/IOX_Q_ARB (kvmhost sdb)'
+description: 'RQ5 real-app co-location, Phase C (contract section 6 timeline): LC maxexecutiontime 1500 with per-10s status lines (time-series figure); BE phase chain sleep 150 -> fill(LOW) 300s -> overwrite(HIGH)
+  300s on the populated DB -> sleep 300s (trailing compaction drain window). primary_scene = LC; step duration 1700. Arms: NONE / IO_WEIGHT (LC 1000, BE 10) / IOX_Q_ARB (arb_wdrr + LC q_sp_edf + BE q_wedf
+  via cgroup_policies_from_groups). LOW=32 MiB/s, HIGH=128 MiB/s.'
+default_sequence: RQ5C_NONE_DYN
+fail_fast_on_scene_error: true
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 4000
+      require_samples: true
+      disk_devices:
+      - sdb
+      cgroup_paths:
+      - /sys/fs/cgroup/rq5_lc
+      - /sys/fs/cgroup/rq5_be
+      output_dir: /tmp/rq5_coloc/monitor/system_metric
+io_ext_policy_profiles:
+  arm_none:
+    name: 'rq5 coloc none: native none baseline'
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_io_weight:
+    name: 'rq5 coloc io_weight: none + io.weight LC 1000 / BE 10'
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_iox_q_arb:
+    name: 'rq5 coloc iox_q_arb: scx_io arb_wdrr + LC q_sp_edf + BE q_wedf (joint)'
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+      root_policies:
+      - name: q_fifo_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+      cgroup_policies_from_groups:
+      - tenant_group: lc_iox_q_arb
+        name_template: q_sp_edf_{tenant_id}
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        scope: cgroup_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+      - tenant_group: be_iox_q_arb
+        name_template: q_wedf_{tenant_id}
+        path: /opt/io-ext/userspace/loader_q_wedf
+        scope: cgroup_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+tenant_groups:
+  lc_none:
+    count: 1
+    scene_id_template: rq5_lc_none_t{idx1}
+    template:
+      base_scene: scene/io_ext/ycsb_rocksdb.yml
+      parameters:
+        target_device: sdb
+        output_dir: /tmp/rq5_coloc/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        database:
+          db_type: rocksdb
+          data_dir: /mnt/rq5_coloc/lc
+          ycsb_dir: /opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime
+          use_direct_io: true
+          write_buffer_size: 67108864
+          storage_backend: kernel_block
+          environment:
+            JAVA_HOME: /tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64
+            PATH: /tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        system:
+          mem_limit_mb: 0
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          mount_options: noatime,nodiratime
+          cgroup_path: /sys/fs/cgroup/rq5_lc
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        ycsb_workload:
+          workload_type: b
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: -Xms2048m -Xmx2048m
+          target: 6554
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 1500
+            status.interval: 10
+            measurementtype: hdrhistogram
+            hdrhistogram.percentiles: 50,95,99,99.9,99.99
+  be_none:
+    count: 1
+    scene_id_template: rq5_be_none_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: sdb
+        output_dir: /tmp/rq5_coloc/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /tmp/m1_cache_20261031_bundle/rocksdb/db_bench
+          rocksdb_home: /tmp/m1_cache_20261031_bundle/rocksdb
+          db_path: /mnt/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill_low
+          benchmark: fillrandom
+          duration: 300
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 33554432
+        - name: fill_high
+          benchmark: overwrite
+          duration: 300
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 134217728
+        - name: settle
+          benchmark: sleep
+          settle_sec: 300
+  lc_io_weight:
+    count: 1
+    scene_id_template: rq5_lc_io_weight_t{idx1}
+    template:
+      base_scene: scene/io_ext/ycsb_rocksdb.yml
+      parameters:
+        target_device: sdb
+        output_dir: /tmp/rq5_coloc/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        database:
+          db_type: rocksdb
+          data_dir: /mnt/rq5_coloc/lc
+          ycsb_dir: /opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime
+          use_direct_io: true
+          write_buffer_size: 67108864
+          storage_backend: kernel_block
+          environment:
+            JAVA_HOME: /tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64
+            PATH: /tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        system:
+          mem_limit_mb: 0
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          mount_options: noatime,nodiratime
+          cgroup_path: /sys/fs/cgroup/rq5_lc
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/rq5_lc
+            controllers:
+            - io
+            io_weight: 1000
+        ycsb_workload:
+          workload_type: b
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: -Xms2048m -Xmx2048m
+          target: 6554
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 1500
+            status.interval: 10
+            measurementtype: hdrhistogram
+            hdrhistogram.percentiles: 50,95,99,99.9,99.99
+  be_io_weight:
+    count: 1
+    scene_id_template: rq5_be_io_weight_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: sdb
+        output_dir: /tmp/rq5_coloc/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /tmp/m1_cache_20261031_bundle/rocksdb/db_bench
+          rocksdb_home: /tmp/m1_cache_20261031_bundle/rocksdb
+          db_path: /mnt/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: none
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/rq5_be
+            controllers:
+            - io
+            io_weight: 10
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill_low
+          benchmark: fillrandom
+          duration: 300
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 33554432
+        - name: fill_high
+          benchmark: overwrite
+          duration: 300
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 134217728
+        - name: settle
+          benchmark: sleep
+          settle_sec: 300
+  lc_iox_q_arb:
+    count: 1
+    scene_id_template: rq5_lc_iox_q_arb_t{idx1}
+    template:
+      base_scene: scene/io_ext/ycsb_rocksdb.yml
+      parameters:
+        target_device: sdb
+        output_dir: /tmp/rq5_coloc/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        database:
+          db_type: rocksdb
+          data_dir: /mnt/rq5_coloc/lc
+          ycsb_dir: /opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime
+          use_direct_io: true
+          write_buffer_size: 67108864
+          storage_backend: kernel_block
+          environment:
+            JAVA_HOME: /tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64
+            PATH: /tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        system:
+          mem_limit_mb: 0
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          mount_options: noatime,nodiratime
+          cgroup_path: /sys/fs/cgroup/rq5_lc
+        scheduler: scx_io
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+        ycsb_workload:
+          workload_type: b
+          recordcount: 400000
+          operationcount: 10000000
+          threads: 16
+          jvm_args: -Xms2048m -Xmx2048m
+          target: 6554
+          properties:
+            fieldcount: 10
+            fieldlength: 1024
+            maxexecutiontime: 1500
+            status.interval: 10
+            measurementtype: hdrhistogram
+            hdrhistogram.percentiles: 50,95,99,99.9,99.99
+  be_iox_q_arb:
+    count: 1
+    scene_id_template: rq5_be_iox_q_arb_t{idx1}
+    template:
+      base_scene: scene/io_ext/dbbench.yml
+      parameters:
+        target_device: sdb
+        output_dir: /tmp/rq5_coloc/scene/{group_id}
+        duration: 1700
+        drop_caches_before_run: false
+        dbbench:
+          dbbench_bin: /tmp/m1_cache_20261031_bundle/rocksdb/db_bench
+          rocksdb_home: /tmp/m1_cache_20261031_bundle/rocksdb
+          db_path: /mnt/rq5_coloc/be
+          use_direct_io: true
+          common_args:
+            num: 1000000
+            value_size: 1024
+            key_size: 16
+            compression_type: none
+            bloom_bits: 10
+            cache_size: 0
+            write_buffer_size: 67108864
+        system:
+          auto_format_disk: false
+          format_device: false
+          skip_disk_setup: true
+          cgroup_path: /sys/fs/cgroup/rq5_be
+        scheduler: scx_io
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+        phases:
+        - name: wait
+          benchmark: sleep
+          settle_sec: 150
+        - name: fill_low
+          benchmark: fillrandom
+          duration: 300
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 33554432
+        - name: fill_high
+          benchmark: overwrite
+          duration: 300
+          args:
+            num: 100000000
+            value_size: 1024
+            threads: 8
+            benchmark_write_rate_limit: 134217728
+        - name: settle
+          benchmark: sleep
+          settle_sec: 300
+test_sequences:
+- sequence_id: RQ5C_NONE_DYN
+  name: 'RQ5C NONE dynamic: BE LOW->HIGH fill steps, LC 1500s window'
+  io_ext_policy: arm_none
+  steps:
+  - name: rq5c none dyn
+    tenant_groups:
+    - lc_none
+    - be_none
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1700
+    primary_scene: rq5_lc_none_t1
+- sequence_id: RQ5C_IO_WEIGHT_DYN
+  name: 'RQ5C IO_WEIGHT dynamic: BE LOW->HIGH fill steps, LC 1500s window'
+  io_ext_policy: arm_io_weight
+  steps:
+  - name: rq5c io_weight dyn
+    tenant_groups:
+    - lc_io_weight
+    - be_io_weight
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1700
+    primary_scene: rq5_lc_io_weight_t1
+- sequence_id: RQ5C_IOX_Q_ARB_DYN
+  name: 'RQ5C IOX_Q_ARB dynamic: BE LOW->HIGH fill steps, LC 1500s window'
+  io_ext_policy: arm_iox_q_arb
+  steps:
+  - name: rq5c iox_q_arb dyn
+    tenant_groups:
+    - lc_iox_q_arb
+    - be_iox_q_arb
+    monitoring_scenes:
+    - ib_system_metric
+    monitoring_startup_time: 3
+    duration: 1700
+    primary_scene: rq5_lc_iox_q_arb_t1

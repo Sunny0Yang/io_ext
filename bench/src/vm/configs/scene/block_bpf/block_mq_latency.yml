@@ -1,0 +1,15 @@
+name: "块层队列/服务/端到端延迟"
+id: "block_mq_latency"
+type: "system"
+class_name: "BlockMqLatencyScene"
+module_path: "vm.scene.block_bpf.block_mq_latency"
+parameters:
+  duration: 300
+  output_dir: "/home/anon/ioext-bench/test_results/block_bpf/block_mq_latency"
+  output_file: "/home/anon/ioext-bench/test_results/block_bpf/block_mq_latency/block_mq_latency.bpftrace.log"
+  summary_file: "/home/anon/ioext-bench/test_results/block_bpf/block_mq_latency/block_mq_latency_summary.json"
+  require_events: true
+  privilege:
+    method: "sudo_nopasswd"
+    askpass_script: ""
+    env_var: "SUDO_PASSWORD"

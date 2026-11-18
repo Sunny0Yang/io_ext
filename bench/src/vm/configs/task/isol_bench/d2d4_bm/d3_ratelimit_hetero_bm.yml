@@ -1,0 +1,163 @@
+# D3R ratelimit probe (LC q_fifo passthrough x BE q_ratelimit admission control, tune7 bundle, 2026-11-11)
+# RECAL on new hardware (grep for 'RECAL('):
+#   RECAL(DEVICE)    target_device=nvme0n1  (single disk; root ext4 spans it)
+#   RECAL(REGION)    file_name=/opt/ioext/d2d4_regions/region.bin (shared region file; runner fallocates 64GiB once, reads only)
+#   RECAL(LOADERS)   loader dir=/opt/ioext/d2d4_bm/loaders_tune8/loader-bundle (bare-metal manifest-hash staging dir of the tune8 bundle; sha256(MANIFEST.sha256) prefix16)
+#   RECAL(RATES)     BE per-instance --rate-mib-s 300 (middle tier; q_ratelimit CLI is BANDWIDTH in MiB/s; 4 x 300 MiB/s = 1200 MiB/s = 307.2k IOPS aggregate BE = 41% of the 748k-IOPS saturation; tier ladder 250/300/340 MiB/s per BE = 256k/307k/348k IOPS total = 34%/41%/47%)
+#   RECAL(SLO)       LC SLO line 0.2365 ms (2x the D3_bm_lcsolo_none solo anchor p99; same line as the D3 baseline batch)
+benchmark_name: isol_bench D3 ratelimit hetero bm (bare-metal nvme0n1, shared region file)
+description: 'D3R bm (2026-11-11): D3 hetero shape (1 LC 4k randread QD1 + 4 BE 4k randread QD256, 60s + ramp20, shared region.bin) under admission control — LC = loader_q_fifo passthrough (-p 0, no rate cap), each BE = its own loader_q_ratelimit token bucket --rate-mib-s 300. BE aggregate capped at 307.2k IOPS (41% of the 748k-IOPS saturation) so the device keeps headroom for the LC SLO 0.2365 ms; the BE backlog waits in the per-cgroup BPF queue instead of the device (the S-decisive v1-v7 verdict: on this DRAM-less TLC NVMe only admission control shapes, host-side reshaping is structurally inert). Judge: LC read clat p99 vs 0.2365 ms + BE retention (~307k IOPS delivered, not starved) (scripts/analyze_d2d4_bm.py --slo-ms).'
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      output_dir: ./test_results/isol_bench/d2d4_bm/d3r/system_metric
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/d2d4_bm/d3r/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  iox_ratelimit_hetero:
+    name: 'D3R_bm iox_ratelimit_hetero (LC q_fifo -p0 passthrough / 4x BE q_ratelimit --rate-mib-s 300)'
+    target_device: nvme0n1
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: d3r_iox_lc
+      name_template: q_fifo_lc
+      path: /opt/ioext/d2d4_bm/loaders_tune8/bundle/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '0'
+    - tenant_group: d3r_iox_be
+      name_template: q_ratelimit_be_t{idx1}
+      path: /opt/ioext/d2d4_bm/loaders_tune8/bundle/loader_q_ratelimit
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '7'
+      - --rate-mib-s
+      - '300'
+tenant_groups:
+  d3r_iox_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_d3r_iox_lc
+    collapsed_scene_id: ib_d3r_iox_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /opt/ioext/d2d4_regions/region.bin
+        scheduler: scx_io
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/d2d4_bm/d3r/iox/lc
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          ramp_time: 20
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d3r_iox_lc
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d3r_iox_be:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_d3r_iox_be
+    collapsed_scene_id: ib_d3r_iox_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /opt/ioext/d2d4_regions/region.bin
+        scheduler: scx_io
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/d2d4_bm/d3r/iox/be
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          ramp_time: 20
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_d3r_iox_be_t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: D3R_bm_ratelimit_hetero
+  name: D3 bm LC passthrough x BE rate-limited hetero (BE caps 4x 300 MiB/s)
+  io_ext_policy: iox_ratelimit_hetero
+  steps:
+  - name: 1 LC QD1 passthrough + 4 BE QD256 under 300 MiB/s caps
+    tenant_groups:
+    - d3r_iox_lc
+    - d3r_iox_be
+    monitoring_scenes: &id001
+    - ib_system_metric
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+default_sequence: D3R_bm_ratelimit_hetero
+fail_fast_on_scene_error: true

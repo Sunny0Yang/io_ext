@@ -1,0 +1,10 @@
+{
+  "name": "heimdall_v2_hold_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 8,
+    "complete_count_min": 1
+  },
+  "notes": "heimdall_v2 with TEST_HOLD_EVERY=8 (default), 16 non-zero-sector reads: every 8th insert held. bpftool hm_v2_stats should show test_held >= 1, held_enqueued >= 1. NOTE: field is test_held, NOT held_total. trace must use non-zero sectors (sector 0 bypasses test rule)."
+}

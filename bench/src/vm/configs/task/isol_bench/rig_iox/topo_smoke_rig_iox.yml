@@ -1,0 +1,891 @@
+benchmark_name: isol_bench rig iox cgroup topology smoke (kvmhost/sdb)
+description: "Rig topo smoke: 8 sequences, 20 s each \u2014 chain/tree/deleg mounts, nested cgroup= mapping, teardown residue, evidence pipeline (design \xA77)."
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_iox/smoke/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_iox/smoke/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_iox/smoke/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_iox/smoke/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/rig_iox/smoke/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  smoke_d1_flat_none:
+    name: rig iox d1_flat_none
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: &id001
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: d1_flat_none_root
+        path: /opt/io-ext/userspace/loader_q_none
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  smoke_d1_chain4_none:
+    name: rig iox d1_chain4_none
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: d1_chain4_none_root
+        path: /opt/io-ext/userspace/loader_q_none
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  smoke_d1_chain4_fifo:
+    name: rig iox d1_chain4_fifo
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: d1_chain4_fifo_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  smoke_d1_chain16_fifo:
+    name: rig iox d1_chain16_fifo
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      root_policies:
+      - name: d1_chain16_fifo_root
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: root_policy
+        args:
+        - -c
+        - '{policy_cgroup_path}'
+  smoke_d1_leafpol4:
+    name: rig iox q_fifo leafpol4 per-tenant (smoke)
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: smoke_d1_leafpol4
+      name_template: q_fifo_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+  smoke_d2_treeleaf:
+    name: rig iox q_wedf per-leaf treeleaf (smoke)
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+    cgroup_policies_from_groups:
+    - tenant_group: smoke_d2_treeleaf
+      name_template: q_wedf_{tenant_id}
+      path: /opt/io-ext/userspace/loader_q_wedf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+  smoke_d2t_arb_mini:
+    name: rig iox arb_wdrr + fifo per-leaf mini (smoke)
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: smoke_d2t_w1
+      name_template: q_fifo_w1
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '7'
+      - -W
+      - '100'
+    - tenant_group: smoke_d2t_w2
+      name_template: q_fifo_w2
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '6'
+      - -W
+      - '200'
+    - tenant_group: smoke_d2t_w3
+      name_template: q_fifo_w3
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '5'
+      - -W
+      - '300'
+    - tenant_group: smoke_d2t_w4
+      name_template: q_fifo_w4
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '4'
+      - -W
+      - '400'
+  smoke_d3_deleg:
+    name: rig iox arb_wdrr deleg (smoke)
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+      cgroup_policies:
+      - name: q_sp_edf_lc
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_smoke_d3_deleg/lc
+        - -p
+        - '0'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_smoke_d3_deleg/lc
+      - name: q_fifo_be
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_smoke_d3_deleg/be
+        - -p
+        - '7'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_smoke_d3_deleg/be
+tenant_groups:
+  smoke_d1_flat_none:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d1_flat_none_t{idx1}
+    collapsed_scene_id: ib_rig_smoke_d1_flat_none_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d1_flat_none
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d1_flat_none/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d1_chain4_none:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d1_chain4_none_t{idx1}
+    collapsed_scene_id: ib_rig_smoke_d1_chain4_none_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d1_chain4_none
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_sd1cqn4/a/b/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d1_chain4_fifo:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d1_chain4_fifo_t{idx1}
+    collapsed_scene_id: ib_rig_smoke_d1_chain4_fifo_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d1_chain4_fifo
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_sd1cqf4/a/b/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d1_chain16_fifo:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d1_chain16_fifo_t{idx1}
+    collapsed_scene_id: ib_rig_smoke_d1_chain16_fifo_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d1_chain16_fifo
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_sd1cqf16/a/b/c/d/e/f/g/h/i/j/k/l/m/n/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d1_leafpol4:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d1_leafpol4_t{idx1}
+    collapsed_scene_id: ib_rig_smoke_d1_leafpol4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d1_leafpol4
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        system:
+          cpu_bind: '2'
+        fio_global:
+          ioengine: io_uring
+          fixedbufs: 1
+          registerfiles: 1
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_sd1clp4/a/b/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d2_treeleaf:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d2_treeleaf_cg{idx1}
+    collapsed_scene_id: ib_rig_smoke_d2_treeleaf_subjob
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2_treeleaf/g1/t1
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2_treeleaf/g1/t2
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2_treeleaf/g2/t3
+    - parameters:
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2_treeleaf/g2/t4
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d2_treeleaf
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 20
+          ramp_time: 5
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2_treeleaf/g1/t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d2t_w1:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d2t_w1
+    collapsed_scene_id: ib_rig_smoke_d2t_w1_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d2t_arb_w1
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 20
+          ramp_time: 5
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2t_arb/g1/t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d2t_w2:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d2t_w2
+    collapsed_scene_id: ib_rig_smoke_d2t_w2_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d2t_arb_w2
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 20
+          ramp_time: 5
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2t_arb/g1/t2
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d2t_w3:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d2t_w3
+    collapsed_scene_id: ib_rig_smoke_d2t_w3_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d2t_arb_w3
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 20
+          ramp_time: 5
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2t_arb/g1/t3
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d2t_w4:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d2t_w4
+    collapsed_scene_id: ib_rig_smoke_d2t_w4_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d2t_arb_w4
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 20
+          ramp_time: 5
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d2t_arb/g1/t4
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d3_lc:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d3_lc
+    collapsed_scene_id: ib_rig_smoke_d3_lc_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d3_deleg/lc
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d3_deleg/lc/lc_t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  smoke_d3_be:
+    count: 2
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_smoke_d3_be_t{idx1}
+    collapsed_scene_id: ib_rig_smoke_d3_be_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/smoke/d3_deleg/be
+        duration: 60
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 20
+          time_based: true
+          group_reporting: true
+          ramp_time: 5
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_smoke_d3_deleg/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: SMOKE_TOPO_D1_FLAT_NONE_N8
+  name: SMOKE topo D1 iox q_none d1_flat_none n=8
+  io_ext_policy: smoke_d1_flat_none
+  steps:
+  - name: n=8 LC iox q_none d1_flat_none (smoke)
+    tenant_groups:
+    - smoke_d1_flat_none
+    tenant_count: 8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+- sequence_id: SMOKE_TOPO_D1_CHAIN4_NONE_N8
+  name: SMOKE topo D1 iox q_none d1_chain4_none n=8
+  io_ext_policy: smoke_d1_chain4_none
+  steps:
+  - name: n=8 LC iox q_none d1_chain4_none (smoke)
+    tenant_groups:
+    - smoke_d1_chain4_none
+    tenant_count: 8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+- sequence_id: SMOKE_TOPO_D1_CHAIN4_FIFO_N8
+  name: SMOKE topo D1 iox q_fifo d1_chain4_fifo n=8
+  io_ext_policy: smoke_d1_chain4_fifo
+  steps:
+  - name: n=8 LC iox q_fifo d1_chain4_fifo (smoke)
+    tenant_groups:
+    - smoke_d1_chain4_fifo
+    tenant_count: 8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+- sequence_id: SMOKE_TOPO_D1_CHAIN16_FIFO_N8
+  name: SMOKE topo D1 iox q_fifo d1_chain16_fifo n=8
+  io_ext_policy: smoke_d1_chain16_fifo
+  steps:
+  - name: n=8 LC iox q_fifo d1_chain16_fifo (smoke)
+    tenant_groups:
+    - smoke_d1_chain16_fifo
+    tenant_count: 8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+- sequence_id: SMOKE_TOPO_D1_LEAFPOL4_N8
+  name: SMOKE topo D1 iox q_fifo leafpol4 n=8
+  io_ext_policy: smoke_d1_leafpol4
+  steps:
+  - name: n=8 LC iox q_fifo leafpol4 (smoke)
+    tenant_groups:
+    - smoke_d1_leafpol4
+    tenant_count: 8
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+- sequence_id: SMOKE_TOPO_D2_TREELEAF_N4
+  name: SMOKE topo D2 iox q_wedf treeleaf n=4
+  io_ext_policy: smoke_d2_treeleaf
+  steps:
+  - name: saturated weighted n=4 iox q_wedf treeleaf (smoke)
+    tenant_groups:
+    - smoke_d2_treeleaf
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+    tenant_count: 4
+- sequence_id: SMOKE_TOPO_D2_ARB_MINI_N4
+  name: SMOKE topo D2 iox arb_wdrr mini n=4
+  io_ext_policy: smoke_d2t_arb_mini
+  steps:
+  - name: saturated weighted n=4 iox arb_wdrr mini (smoke)
+    tenant_groups:
+    - smoke_d2t_w1
+    - smoke_d2t_w2
+    - smoke_d2t_w3
+    - smoke_d2t_w4
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+- sequence_id: SMOKE_TOPO_D3_DELEG_N2BE
+  name: SMOKE topo D3 iox arb_wdrr deleg 1LC+2BE
+  io_ext_policy: smoke_d3_deleg
+  workload: rread_4k
+  steps:
+  - name: 1 LC + 2 BE hetero deleg (smoke)
+    tenant_groups:
+    - smoke_d3_lc
+    - smoke_d3_be
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 60
+default_sequence: SMOKE_TOPO_D1_FLAT_NONE_N8
+fail_fast_on_scene_error: true

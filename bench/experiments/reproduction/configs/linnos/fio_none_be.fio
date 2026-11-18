@@ -1,0 +1,61 @@
+# =========================================================================
+# experiments/reproduction / linnos / fio_none_be.fio
+# 实验8 LinnOS：none 臂 BE 侧。BE 4k randwrite 分 4 段阶梯
+# （[MSC] 主会话补定：120s = 4x30s，BE randwrite QD 8->16->32->64，
+# 推进 q_linnos busy band；section 用 stonewall 串行，段间零间隔）。
+# 日志命名：linnos_none_be_s{1,2,3,4}
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/be.bin
+
+[be_s1]
+rw=randwrite
+bs=4k
+iodepth=8
+runtime=30
+randseed=2026111408
+write_lat_log=linnos_none_be_s1
+write_bw_log=linnos_none_be_s1
+write_iops_log=linnos_none_be_s1
+
+[be_s2]
+stonewall
+rw=randwrite
+bs=4k
+iodepth=16
+runtime=30
+randseed=2026111416
+write_lat_log=linnos_none_be_s2
+write_bw_log=linnos_none_be_s2
+write_iops_log=linnos_none_be_s2
+
+[be_s3]
+stonewall
+rw=randwrite
+bs=4k
+iodepth=32
+runtime=30
+randseed=2026111424
+write_lat_log=linnos_none_be_s3
+write_bw_log=linnos_none_be_s3
+write_iops_log=linnos_none_be_s3
+
+[be_s4]
+stonewall
+rw=randwrite
+bs=4k
+iodepth=64
+runtime=30
+randseed=2026111432
+write_lat_log=linnos_none_be_s4
+write_bw_log=linnos_none_be_s4
+write_iops_log=linnos_none_be_s4

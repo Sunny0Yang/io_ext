@@ -1,0 +1,1 @@
+{"name":"deadline_3","expected_dispatch_order":[{"sector":0,"op":"read"},{"sector":8,"op":"read"},{"sector":1024,"op":"read"}],"expected_merge":false,"notes":"EDF/deadline 排序"}

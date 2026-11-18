@@ -1,0 +1,89 @@
+benchmark_name: isol_bench rig dynamic tenant transitions smoke (virtme)
+description: >-
+  Phase-aware reconfiguration smoke on the dynamic-tenant timeline scene
+  (task B validation): tenants A+B over four L=15s phases with ONE real
+  transition of each class at a phase boundary, all via the pre-declared
+  phase_actions hooks:
+    boundary 1: switch_native  none -> mq-deadline   (native<->native)
+    boundary 2: attach_io_ext  mq-deadline -> scx_io + resident arb_wdrr
+                + per-tenant q_fifo (native->io_ext loader chain)
+    boundary 3: swap_q         tenant A q_fifo -> q_none under the resident
+                arbiter (gate matrix a: CLEAN after kernel fix1)
+    boundary 4: detach_io_ext  stop loaders, drain, account closure, restore
+                elevator none (io_ext->native)
+  Tenant fio is never restarted at boundaries; every transition records
+  transition_begin/transition_end events with wall time, rc, drain result and
+  an io_ext account snapshot delta (policy_meta + tenant_state via bpftool).
+  cleanup helpers stay explicitly false (forbidden while tenants are active).
+  Feasibility model: results/dynamic_tenant_static_arms/schedule_feasible.json;
+  hot-switch evidence: ioext hotsplit NOTES.md + kernel_fix/FIX_NOTES.md.
+fail_fast_on_scene_error: true
+scenes:
+  ib_rdyn_trans_smoke:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: trans_smoke
+      phase_length_sec: 15
+      num_phases: 4
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/trans_smoke
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 120
+      tenants:
+      - a
+      - b
+      tenant_windows:
+        a: [1, 4]
+        b: [2, 3]
+      allow_transition_exec: true
+      loader_dir: /opt/ioext-io_ext/userspace/io/build
+      phase_actions:
+        1:
+        - type: switch_native
+          scheduler: mq-deadline
+        2:
+        - type: attach_io_ext
+          scheduler: scx_io
+          io_ext:
+            cleanup_stale: false
+            cleanup_bpffs_pins: false
+            cleanup_stale_when_no_specs: false
+            loader_start_gap_sec: 0.5
+            arbiters:
+            - name: trans_smoke_wdrr_arb
+              path: /opt/ioext-io_ext/userspace/io/build/loader_arb_wdrr
+            cgroup_policies:
+            - name: ta_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_trans_smoke_ta
+              args: ["-c", "{policy_cgroup_path}", "-p", "0", "-W", "400"]
+            - name: tb_q_fifo
+              path: /opt/ioext-io_ext/userspace/io/build/loader_q_fifo
+              policy_cgroup_path: /sys/fs/cgroup/rdyn_trans_smoke_tb
+              args: ["-c", "{policy_cgroup_path}", "-p", "5", "-W", "100"]
+        3:
+        - type: swap_q
+          tenants: [a]
+          q: q_none
+          arb_prio: 0
+          arb_weight: 400
+          owner_token_timeout_sec: 5
+        4:
+        - type: detach_io_ext
+          scheduler: none
+          drain_timeout_sec: 30
+test_sequences:
+- sequence_id: DYN_trans_smoke_ab
+  name: dynamic tenant transitions smoke (A+B, 4 phases, L=15s, one real
+    transition per class)
+  io_ext_policy: native
+  steps:
+  - name: DYN_trans_smoke_ab four phases with transitions
+    scenes:
+    - ib_rdyn_trans_smoke
+    duration: 120
+default_sequence: DYN_trans_smoke_ab

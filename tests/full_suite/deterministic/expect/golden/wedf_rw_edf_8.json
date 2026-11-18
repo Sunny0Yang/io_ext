@@ -1,0 +1,19 @@
+{
+  "name": "wedf_rw_edf_8",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "q_wedf EDF offset rule + window locality rule: deadline = arrival + (write ? 500ms : 50ms) (q_wedf.bpf.c:10-11 constants, :47-51 wedf_base_deadline_ns, :153-154 hook wiring). One async_batch: every read deadline is ~450ms earlier than every write deadline, far beyond the 5ms window (q_wedf.bpf.c:12) -> wedf_before (q_wedf.bpf.c:56-62) returns strict EDF ordering cross-op: ALL reads before ALL writes. Within a class deadlines are mutually in-window -> sector-ascending (q_wedf.bpf.c:63). Derived by tests/io/q_wedf_model.py (actual mode, scenario W2).",
+  "expected_dispatch_order": [
+    {"sector": 2560, "op": "read", "nr_sectors": 8},
+    {"sector": 2624, "op": "read", "nr_sectors": 8},
+    {"sector": 2688, "op": "read", "nr_sectors": 8},
+    {"sector": 2752, "op": "read", "nr_sectors": 8},
+    {"sector": 5120, "op": "write", "nr_sectors": 8},
+    {"sector": 5184, "op": "write", "nr_sectors": 8},
+    {"sector": 5248, "op": "write", "nr_sectors": 8},
+    {"sector": 5312, "op": "write", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "Reads submitted DESCENDING (2752,2688,2624,2560) and writes submitted DESCENDING (5312,5248,5184,5120), interleaved R/W. Expected ISSUE: reads ascending then writes ascending — proves both the 50/500ms EDF offsets and the within-window sector rule. All sectors mutually non-adjacent (64-sector gaps, disjoint R/W ranges, above the partition-scan zone since Phase-3 re-space) -> merge impossible, expected_merge=false."
+}

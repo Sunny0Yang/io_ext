@@ -1,0 +1,160 @@
+#!/usr/bin/env bpftrace
+/*
+ * scx_io fallback/bypass monitor (v4) - Per-HCTX Adapted
+ */
+
+BEGIN
+{
+  printf("SCX_IO_BYPASS_FALLBACK_START\n");
+  printf("targets=scx_io_insert_requests,scx_io_bio_should_bypass,scx_io_bypass_request,scx_io_dispatch_request,scx_io_note_bpf_dispatch,__blk_mq_sched_dispatch_requests\n");
+  printf("reason_enum=0:no_policy,1:policy_unavailable,2:policy_rejected,3:quiesced units=count,ns,us\n");
+  printf("residency=dispatch_return_timestamp-bypass_request_timestamp (keyed by struct request *)\n\n");
+}
+
+/* 1) INSERT ENTRY */
+kprobe:scx_io_insert_requests
+{
+  @sbf_insert_requests_count++;
+  @sbf_insert_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_insert_requests
+/@sbf_insert_start_ns[tid]/
+{
+  @sbf_insert_requests_us = stats((nsecs - @sbf_insert_start_ns[tid]) / 1000);
+  delete(@sbf_insert_start_ns[tid]);
+}
+
+/* 2) BIO SHOULDBYPASS */
+kprobe:scx_io_bio_should_bypass
+{
+  @sbf_bio_should_bypass_count++;
+  @sbf_bio_should_bypass_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_bio_should_bypass
+/@sbf_bio_should_bypass_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbf_bio_should_bypass_start_ns[tid]) / 1000;
+  @sbf_bio_should_bypass_us = stats($delta_us);
+  @sbf_bio_should_bypass_us_hist = hist($delta_us);
+  if (retval) { @sbf_bio_bypass_true_count++; } else { @sbf_bio_bypass_false_count++; }
+  delete(@sbf_bio_should_bypass_start_ns[tid]);
+}
+
+/* 3) BYPASS REQUEST — 记录真实的队列驻留起始时间 */
+kprobe:scx_io_bypass_request*
+{
+  $data = (struct scx_io_data *)arg0;
+  $hctx = (struct blk_mq_hw_ctx *)arg1;
+  $rq = (uint64)arg2; // 关键：获取 struct request *
+  $reason = arg4;
+
+  @sbf_bypass_request_count++;
+  @sbf_bypass_reason_count[$reason]++;
+  printf("BYPASS_EVENT ts_ns=%llu reason=%llu rq=%llu\n", nsecs, $reason, $rq);
+  
+  // 记录请求在 fallback 队列的等待起始时间，用 rq 指针做 key
+  @fallback_residency_ts[$rq] = nsecs;
+  @fallback_residency_reason[$rq] = $reason;
+
+  @sbf_bpf_in_flight_at_bypass = stats($data->bpf_in_flight.counter);
+  
+  // 【核心修改点】：适配 Per-HCTX 架构，从 hctx->sched_data 中获取排队数
+  if ($hctx != 0) {
+    $hdata = (struct scx_io_hctx_data *)$hctx->sched_data;
+    if ($hdata != 0) {
+      @sbf_fallback_in_flight_at_bypass = stats($hdata->fallback_in_flight.counter);
+    }
+  }
+
+  // 保留计算函数自身开销的逻辑 (使用 tid)
+  @sbf_bypass_func_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_bypass_request*
+/@sbf_bypass_func_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbf_bypass_func_start_ns[tid]) / 1000;
+  @sbf_bypass_func_us = stats($delta_us);
+  delete(@sbf_bypass_func_start_ns[tid]);
+}
+
+/* 5) BPF DISPATCH TRACKING */
+kprobe:scx_io_note_bpf_dispatch
+{
+  @sbf_bpf_dispatch_count++;
+}
+
+/* 6) DISPATCH REQUEST — 计算驻留时间 */
+kprobe:scx_io_dispatch_request
+{
+  @sbf_dispatch_request_count++;
+  @sbf_dispatch_func_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_dispatch_request
+/@sbf_dispatch_func_start_ns[tid]/
+{
+  // 记录 dispatch 函数执行耗时
+  $delta_us = (nsecs - @sbf_dispatch_func_start_ns[tid]) / 1000;
+  @sbf_dispatch_func_us = stats($delta_us);
+  delete(@sbf_dispatch_func_start_ns[tid]);
+
+  // 替代 pop_fallback：检查 dispatch 取出的请求是否来自 fallback_list
+  $rq = (uint64)retval;
+  if ($rq != 0) {
+    $start_ns = @fallback_residency_ts[$rq];
+    if ($start_ns > 0) {
+      // 成功捕获到一个从 fallback 队列出来的请求！计算真实的排队时间
+      $residency_us = (nsecs - $start_ns) / 1000;
+      @sbf_fallback_residency_us = stats($residency_us);
+      @sbf_fallback_residency_us_hist = hist($residency_us);
+
+      $reason = @fallback_residency_reason[$rq];
+      @sbf_fallback_dispatch_reason_count[$reason]++;
+
+      // 清理 map，防止内存泄漏
+      delete(@fallback_residency_ts[$rq]);
+      delete(@fallback_residency_reason[$rq]);
+    } else {
+      // 如果不在 map 中，说明它是从 BPF 正常调度的，非 bypass 请求
+      @sbf_bpf_normal_dispatch_count++;
+    }
+  }
+}
+
+/* 7) TOP-LEVEL DISPATCH */
+kprobe:__blk_mq_sched_dispatch_requests
+{
+  @sbf_blk_mq_dispatch_count++;
+  @sbf_blk_mq_dispatch_start_ns[tid] = nsecs;
+}
+kretprobe:__blk_mq_sched_dispatch_requests
+/@sbf_blk_mq_dispatch_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbf_blk_mq_dispatch_start_ns[tid]) / 1000;
+  @sbf_blk_mq_dispatch_us = stats($delta_us);
+  delete(@sbf_blk_mq_dispatch_start_ns[tid]);
+}
+
+END
+{
+  printf("\nSCX_IO_BYPASS_FALLBACK_SUMMARY_BEGIN\n");
+  
+  printf("\n--- Bypass Queue Residency Time (Real waiting time) ---\n");
+  print(@sbf_fallback_residency_us);
+  print(@sbf_fallback_residency_us_hist);
+  printf("\n--- Fallback Dispatched by Reason ---\n");
+  print(@sbf_fallback_dispatch_reason_count);
+
+  printf("\n--- Dispatch Origins ---\n");
+  print(@sbf_bpf_normal_dispatch_count); // 走 BPF 出来的数量
+  print(@sbf_bpf_dispatch_count);        // BPF 完成记账次数 (理论上应接近上面)
+
+  printf("\n--- Function Overheads (us) ---\n");
+  print(@sbf_bypass_func_us);
+  print(@sbf_dispatch_func_us);
+
+  printf("SCX_IO_BYPASS_FALLBACK_SUMMARY_END\n");
+  
+  // 清理垃圾数据
+  clear(@fallback_residency_ts);
+  clear(@fallback_residency_reason);
+}

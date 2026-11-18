@@ -1,0 +1,1 @@
+{"name":"seq_5","version":2,"defaults":{"delay_us":500},"requests":[{"op":"read","sector":0,"nr_sectors":8},{"op":"read","sector":8,"nr_sectors":8},{"op":"read","sector":16,"nr_sectors":8},{"op":"read","sector":24,"nr_sectors":8},{"op":"read","sector":32,"nr_sectors":8}]}

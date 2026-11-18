@@ -1,0 +1,345 @@
+# rq1_directio_dbbench: RQ1 real-app scheduler comparison on RocksDB db_bench
+# readwhilewriting under the cache=off caliber (O_DIRECT + no block cache,
+# kvmhost /dev/sdb; runner formats+mounts /mnt/rq1dio_20261102 per case).
+#
+# Purpose: the cache=on RQ1 round (results/rq1_realapps_dbbench/) had
+# foreground reads fully absorbed by page cache + 32 MiB block cache
+# (fg_read_p99 ~32.7us = all-hit, fg ops ~275k/s); the device was almost
+# untouched by the foreground and the bg write stream dominated. This round
+# re-runs RQ1 with direct I/O so the foreground read stream truly reaches
+# /dev/sdb -- the same caliber as the virtme-ng rig_dbbench matrix
+# (results/isol_bench/rig_dbbench: bfq rww p99 -29.5% vs none etc.).
+#
+# cache=off calibration (vs rq1_realapps_dbbench.yml):
+#   - dbbench.use_direct_io: true + cache_size: 0 (O_DIRECT reads +
+#     flush/compaction, no block cache; exactly the historical M1 / rig_dbbench
+#     caliber; the 32 MiB explicit cache of the cache=on round is REMOVED).
+#   - bloom_bits 10 kept (bloom does not cache; it filters, both calibers).
+#   - drop_caches_before_run: true kept (no-op for O_DIRECT data files;
+#     uniform discipline).
+# Device adaptation: NONE to workload parameters -- num 1M / value 1024 /
+# key 16 / compression none / write_buffer 64MB and the phase chain
+# fillrandom -> settle 75s -> readwhilewriting 150s (threads 4, writes 3M)
+# are IDENTICAL to the cache=on round so the three-way compare is
+# workload-constant. Probe will verify direct-I/O magnitudes against the
+# kvmhost sdb single A/B references (M1CACHE_AB_DBB_rr/rww_cachefix_off:
+# readrandom 35268 ops/s, rww 6128 ops/s fg) and virtme rig rww scale; 3x
+# band gate before formal.
+#
+# Arms (7): RQ1D_DBB_{NONE,KYBER,MQ_DEADLINE,BFQ} native, RQ1D_DBB_IO_COST
+# (root io.cost, sdb RECAL), RQ1D_DBB_IOX_Q_DDL, RQ1D_DBB_IOX_ARB_Q.
+#
+# Result convention (results dir, separated from motivation_* and cache=on):
+#   results/rq1_realapps_directio_dbbench/<stage_dir>/
+benchmark_name: "RQ1 direct-I/O db_bench readwhilewriting: 7 scheduler/controller arms (cache=off)"
+description: >-
+  Single-tenant db_bench readwhilewriting on freshly formatted /dev/sdb with
+  O_DIRECT + no block cache, one arm per sequence: native
+  none/kyber/mq-deadline/bfq, root io.cost (sdb RECAL calibration), iox
+  queue-only (loader_q_ddl), iox arbiter+queue (arb_wdrr + q_fifo,
+  arb-dominant). Repeats via the campaign runner.
+default_sequence: "RQ1D_DBB_NONE"
+fail_fast_on_scene_error: true
+
+_native_none_io_ext: &native_none_io_ext
+  cleanup_stale_when_no_specs: true
+  cleanup_bpffs_pins: true
+
+_iox_scene_io_ext: &iox_scene_io_ext
+  cleanup_stale: false
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+_io_cost_model: &io_cost_model
+  ctrl: "user"
+  model: "linear"
+  rbps: 335544320
+  rseqiops: 82000
+  rrandiops: 82000
+  wbps: 335544320
+  wseqiops: 82000
+  wrandiops: 82000
+_io_cost_qos: &io_cost_qos
+  enable: true
+  ctrl: "user"
+  rpct: 95.0
+  rlat: 1000000
+  wpct: 95.0
+  wlat: 1000000
+  min: 50.0
+  max: 150.0
+
+_common_dbbench: &common_dbbench
+  target_device: "sdb"
+  output_dir: "/tmp/rq1dio_20261102/scene/{group_id}"
+  duration: 900
+  drop_caches_before_run: true       # uniform discipline; no-op for O_DIRECT data files
+  dbbench:
+    dbbench_bin: "/tmp/m1_cache_20261031_bundle/rocksdb/db_bench"
+    rocksdb_home: "/tmp/m1_cache_20261031_bundle/rocksdb"
+    db_path: "/mnt/rq1dio_20261102/dbbench_db"
+    use_direct_io: true              # cache=off caliber: O_DIRECT, no block cache
+    common_args:
+      num: 1000000
+      value_size: 1024
+      key_size: 16
+      compression_type: "none"
+      bloom_bits: 10
+      cache_size: 0                  # cache=off caliber (cache=on used 32 MiB explicit)
+      write_buffer_size: 67108864
+  system:
+    auto_format_disk: true
+    format_device: false
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/rq1dio_dbb"
+
+_common_phases: &common_phases
+  phases:
+  - name: "fillrandom"
+    benchmark: "fillrandom"          # builds num x value_size DB; runs to completion
+  - name: "settle1"
+    benchmark: "sleep"
+    settle_sec: 75
+  - name: "readwhilewriting"
+    benchmark: "readwhilewriting"    # foreground reads + writer thread + flush/compaction
+    duration: 150
+    args:
+      threads: 4
+      writes: 3000000                # identical cap to cache=on round (workload-constant compare)
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - "sdb"
+      output_dir: "/tmp/rq1dio_20261102/monitor/system_metric"
+
+io_ext_policy_profiles:
+  arm_none:
+    name: "rq1dio dbbench native none"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext: *native_none_io_ext
+  arm_kyber:
+    name: "rq1dio dbbench native kyber"
+    target_device: "sdb"
+    scheduler: "kyber"
+    io_ext: *native_none_io_ext
+  arm_mq_deadline:
+    name: "rq1dio dbbench native mq-deadline"
+    target_device: "sdb"
+    scheduler: "mq-deadline"
+    io_ext: *native_none_io_ext
+  arm_bfq:
+    name: "rq1dio dbbench native bfq"
+    target_device: "sdb"
+    scheduler: "bfq"
+    io_ext: *native_none_io_ext
+  arm_io_cost:
+    name: "rq1dio dbbench io.cost root controller"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext: *native_none_io_ext
+  arm_iox_q_ddl:
+    name: "rq1dio dbbench iox q_ddl (queue-only)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_ddl_root"
+        path: "/opt/io-ext/userspace/loader_q_ddl"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_arb_q:
+    name: "rq1dio dbbench iox arb_wdrr + q_fifo (arb-dominant)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      arbiters:
+      - name: "arb_wdrr"
+        path: "/opt/io-ext/userspace/loader_arb_wdrr"
+        scope: "arbiter"
+      root_policies:
+      - name: "q_fifo_root"
+        path: "/opt/io-ext/userspace/loader_q_fifo"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+
+tenant_groups:
+  dbb_none:
+    count: 1
+    scene_id_template: "rq1d_dbb_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "none"
+        io_ext: *native_none_io_ext
+        <<: *common_phases
+  dbb_kyber:
+    count: 1
+    scene_id_template: "rq1d_dbb_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "kyber"
+        io_ext: *native_none_io_ext
+        <<: *common_phases
+  dbb_mq_deadline:
+    count: 1
+    scene_id_template: "rq1d_dbb_mq_deadline_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "mq-deadline"
+        io_ext: *native_none_io_ext
+        <<: *common_phases
+  dbb_bfq:
+    count: 1
+    scene_id_template: "rq1d_dbb_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "bfq"
+        io_ext: *native_none_io_ext
+        <<: *common_phases
+  dbb_io_cost:
+    count: 1
+    scene_id_template: "rq1d_dbb_io_cost_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "none"
+        io_ext:
+          <<: *native_none_io_ext
+          root_cgroup:
+            path: "/sys/fs/cgroup"
+            controllers:
+            - "io"
+          cgroup:
+            path: "/sys/fs/cgroup/rq1dio_dbb"
+            controllers:
+            - "io"
+            io_cost:
+              model: *io_cost_model
+              qos: *io_cost_qos
+        <<: *common_phases
+  dbb_iox_q_ddl:
+    count: 1
+    scene_id_template: "rq1d_dbb_iox_q_ddl_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        <<: *common_phases
+  dbb_iox_arb_q:
+    count: 1
+    scene_id_template: "rq1d_dbb_iox_arb_q_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/dbbench.yml"
+      parameters:
+        <<: *common_dbbench
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        <<: *common_phases
+
+test_sequences:
+- sequence_id: "RQ1D_DBB_NONE"
+  name: "RQ1D db_bench rww O_DIRECT, native none baseline"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "dbbench rww none"
+    tenant_groups: ["dbb_none"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "RQ1D_DBB_KYBER"
+  name: "RQ1D db_bench rww O_DIRECT, native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "dbbench rww kyber"
+    tenant_groups: ["dbb_kyber"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "RQ1D_DBB_MQ_DEADLINE"
+  name: "RQ1D db_bench rww O_DIRECT, native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "dbbench rww mq-deadline"
+    tenant_groups: ["dbb_mq_deadline"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "RQ1D_DBB_BFQ"
+  name: "RQ1D db_bench rww O_DIRECT, native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "dbbench rww bfq"
+    tenant_groups: ["dbb_bfq"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "RQ1D_DBB_IO_COST"
+  name: "RQ1D db_bench rww O_DIRECT, root io.cost (sdb RECAL calibration)"
+  io_ext_policy: "arm_io_cost"
+  steps:
+  - name: "dbbench rww io.cost"
+    tenant_groups: ["dbb_io_cost"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "RQ1D_DBB_IOX_Q_DDL"
+  name: "RQ1D db_bench rww O_DIRECT, iox queue-only loader_q_ddl"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "dbbench rww iox q_ddl"
+    tenant_groups: ["dbb_iox_q_ddl"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900
+- sequence_id: "RQ1D_DBB_IOX_ARB_Q"
+  name: "RQ1D db_bench rww O_DIRECT, iox arb_wdrr + q_fifo (arb-dominant)"
+  io_ext_policy: "arm_iox_arb_q"
+  steps:
+  - name: "dbbench rww iox arb_q"
+    tenant_groups: ["dbb_iox_arb_q"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 900

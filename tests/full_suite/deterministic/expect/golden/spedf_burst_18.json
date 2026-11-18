@@ -1,0 +1,29 @@
+{
+  "name": "spedf_burst_18",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation (tests/io/q_sp_edf_model.py scenario s4_burst_18)",
+  "oracle_ref": "small_burst anti-starvation interleave. q_sp_edf.bpf.c:14 SMALL_BURST=8; :215-216 first insert re-arms burst 0->8; 8 small dispatches exhaust it (:166-167); 9th dispatch: burst==0 -> large_should_run TRUE (:118-119) -> L204800 and burst reset to 8 (:163-165); next 8 smalls; then both small lanes empty -> L208896 (:115-117). Expected ISSUE: S x8 (102400..104192), L204800, S x8 (104448..106240), L208896.",
+  "expected_dispatch_order": [
+    {"sector": 102400, "op": "read", "nr_sectors": 8},
+    {"sector": 102656, "op": "read", "nr_sectors": 8},
+    {"sector": 102912, "op": "read", "nr_sectors": 8},
+    {"sector": 103168, "op": "read", "nr_sectors": 8},
+    {"sector": 103424, "op": "read", "nr_sectors": 8},
+    {"sector": 103680, "op": "read", "nr_sectors": 8},
+    {"sector": 103936, "op": "read", "nr_sectors": 8},
+    {"sector": 104192, "op": "read", "nr_sectors": 8},
+    {"sector": 204800, "op": "read", "nr_sectors": 128},
+    {"sector": 104448, "op": "read", "nr_sectors": 8},
+    {"sector": 104704, "op": "read", "nr_sectors": 8},
+    {"sector": 104960, "op": "read", "nr_sectors": 8},
+    {"sector": 105216, "op": "read", "nr_sectors": 8},
+    {"sector": 105472, "op": "read", "nr_sectors": 8},
+    {"sector": 105728, "op": "read", "nr_sectors": 8},
+    {"sector": 105984, "op": "read", "nr_sectors": 8},
+    {"sector": 106240, "op": "read", "nr_sectors": 8},
+    {"sector": 208896, "op": "read", "nr_sectors": 128}
+  ],
+  "expected_merge": false,
+  "notes": "NEW Tier-2 case verifying small_burst_left anti-starvation (Test_Design_IOExt.md ~line 411). Requires batch_size 18 (trace defaults) so all 18 requests are submitted in ONE io_uring batch — the rig's batch 8 would barrier after 8 completions (trace_driver.c:282-367) and the interleave could never form. Exact assertion is tie-robust: within-lane submission order == sector ASC (bpf.c:89-91 sector fallback yields the same order). Flakiness root-causes if seen: (a) a >20ms host stall between inserts and the 9th dispatch would expire the large head deadline (bpf.c:120-121) and hoist L204800 early; (b) dispatch starting before all 18 inserts complete would shift the interleave."
+}

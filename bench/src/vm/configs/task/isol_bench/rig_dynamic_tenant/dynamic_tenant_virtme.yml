@@ -1,0 +1,64 @@
+benchmark_name: isol_bench rig dynamic tenant timeline (formal skeleton, virtme)
+description: 'Dynamic multi-tenant timeline main-experiment skeleton: six-phase continuous trajectory
+  T1={A} T2={A,B} T3={A,B,C} T4={A,C,D} T5={A,D} T6={A} on one absolute monotonic clock, frozen L=90s
+  from results/dyn_tenant_kvmhost/contract/calibration.json, native scheduler=none only. Service preference
+  A > C > B = D is recorded for later tuning; no io_ext policy in this skeleton. Frozen B/C rates are
+  applied as per-tenant fio --rate via the scene''s tenant-spec passthrough; frozen_contract is carried
+  as the freeze record.'
+fail_fast_on_scene_error: true
+scenes:
+  ib_rdyn_virtme:
+    base_scene: scene/io_ext/timeline.yml
+    parameters:
+      target_device: nvme0n1
+      scheduler: none
+      timeline_id: virtme
+      phase_length_sec: 90.0
+      num_phases: 6
+      output_dir: ./test_results/isol_bench/rig_dynamic_tenant/virtme
+      io_ext:
+        cleanup_stale: false
+        cleanup_bpffs_pins: false
+        cleanup_stale_when_no_specs: false
+      duration: 690
+      frozen_contract:
+        formal_phase_length_sec: 90.0
+        l_decision:
+          start_sec: 60
+          growth: 1.5
+          max_rounds: 2
+          criteria:
+          - 'L1: A per-phase p99 window samples >= 100 (T4 worst case)'
+          - 'L3: B/C/D convergence <= L/3'
+          status: decided
+        rate_b_mib_s: 299
+        rate_c_mib_s: 198
+        d_rate: unlimited
+        d_pressure_fraction_of_solo: 0.23987894097889575
+        seed_base: 20261103
+        service_preference: A > C > B = D
+        loss_weights:
+          a: 0.6
+          c: 0.3
+          low_group_bd: 0.1
+        guardrail_thresholds:
+          min_completion_fraction_of_solo: 0.05
+          max_no_progress_sec: 5.0
+        calibration_json_sha256: e9da3dcf3dcdafee4de212bb8fb44819fd950459ba5faccc8ed57eafe8192d96
+      tenants:
+        a: {}
+        b:
+          rate: 299M
+        c:
+          rate: 198M
+        d: {}
+test_sequences:
+- sequence_id: DYN_virtme
+  name: dynamic tenant timeline formal skeleton (L=90s)
+  io_ext_policy: native
+  steps:
+  - name: DYN_virtme six phases
+    scenes:
+    - ib_rdyn_virtme
+    duration: 690
+default_sequence: DYN_virtme

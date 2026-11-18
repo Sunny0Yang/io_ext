@@ -1,0 +1,67 @@
+# io-ext dynamic multi-tenant timeline scene (main-experiment skeleton).
+#
+# Six-phase continuous trajectory on ONE absolute monotonic clock (see
+# src/vm/scene/io_ext/timeline.py module docstring and
+# docs/plans/dynamic_tenant_reconfiguration_experiment.md):
+#
+#   T1={A}  T2={A,B}  T3={A,B,C}  T4={A,C,D}  T5={A,D}  T6={A}
+#
+# Tenant workloads (frozen precedents, do NOT change silently):
+#   A: 4K randread QD1 single job   -- rig_iox d4 foreground precedent
+#      (src/vm/configs/task/isol_bench/rig_iox/d4_burst_rig_iox.yml)
+#   B: 64K randread QD8 single job  -- M2 fig2 precedent
+#      (scripts/gen_m2_fig2_yamls.py)
+#   C: 64K randread QD8 single job  -- same shape as B
+#   D: 4K randwrite QD64 single job -- explore_scene_combo 08
+#      (src/vm/configs/task/explore_scene_combo/08_ycsb_lat_fio_randwrite.yml)
+#   all: direct=1, io_uring, numjobs=1, per-tenant cgroup
+#   /sys/fs/cgroup/rdyn_<seq>_t{a,b,c,d}, disjoint device quarters
+#   (A 0-25%, B 25-50%, C 50-75%, D 75-100% of the device).
+#
+# SERVICE PREFERENCE (for later tuning; NOT implemented in this skeleton):
+#   A > C > B = D
+#   Rationale: A is the latency-critical foreground tenant (4K/QD1), C is the
+#   mid-priority 64K/QD8 batch tenant sharing its shape with B, and B/D are
+#   best-effort background tenants (D is the 4K/QD64 writer).
+#
+# Fio instrumentation per tenant (verified histogram reference implementation:
+# scripts/m2_fig2_p99_guest.py, fio_command): --write_hist_log
+# --log_hist_msec=1000 --log_hist_coarseness=0 --log_unix_epoch=1
+# --write_bw_log --log_avg_msec=1000 --clat_percentiles=1 --lat_percentiles=0
+# --output-format=json+ --randseed explicitly fixed.  D's tail evidence comes
+# from the write entries of the same clat_hist log.
+#
+# GUARDRAIL: cleanup_stale / cleanup_bpffs_pins must stay explicitly false
+# (gen_rq5_coloc / policy_transition lesson: setdefault(False) is not enough).
+# The scene raises at parse time if they resolve truthy.
+name: "io-ext dynamic tenant timeline (six-phase continuous trajectory)"
+id: "ioext_dynamic_tenant_timeline"
+type: "io_ext"
+class_name: "IoExtTimelineScene"
+module_path: "vm.scene.io_ext.timeline"
+parameters:
+  target_device: "nvme0n1"
+  # Native-only skeleton arm.  io_ext q-switch arms will be layered on later
+  # via phase_actions; the scene itself never attaches a policy.
+  scheduler: "none"
+  timeline_id: "rdyn"
+  # Formal contract default; smoke configs override to 15.  All arms of an
+  # experiment MUST use the same phase length L.
+  phase_length_sec: 60
+  num_phases: 6
+  fio_runtime_margin_sec: 2
+  poll_interval_sec: 0.1
+  duration_margin_sec: 30
+  # Explicitly false (not merely defaulted): cleanup helpers are forbidden
+  # while tenants are active.
+  io_ext:
+    cleanup_stale: false
+    cleanup_bpffs_pins: false
+    cleanup_stale_when_no_specs: false
+  # Placeholder switch_q hook (records events, never attaches).  Per-boundary
+  # action lists are declared in task YAML overrides when needed; an empty
+  # mapping means record-only boundaries.
+  allow_switch_q_exec: false
+  phase_actions: {}
+  drop_caches_before_run: true
+  output_dir: "./test_results/io_ext/timeline"

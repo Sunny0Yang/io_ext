@@ -1,0 +1,1 @@
+{"name":"prio_5","version":2,"defaults":{"delay_us":500},"requests":[{"op":"read","sector":0,"nr_sectors":8},{"op":"read","sector":8,"nr_sectors":8},{"op":"read","sector":16,"nr_sectors":8},{"op":"write","sector":256,"nr_sectors":128},{"op":"write","sector":512,"nr_sectors":128}]}

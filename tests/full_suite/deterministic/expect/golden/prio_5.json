@@ -1,0 +1,16 @@
+{
+  "name": "prio_5",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "q_prio 2-lane: read/small lane (high) FIFO before large-write lane (low) FIFO",
+  "expected_complete_order": [
+    {"sector": 0, "op": "read", "nr_sectors": 8},
+    {"sector": 8, "op": "read", "nr_sectors": 8},
+    {"sector": 16, "op": "read", "nr_sectors": 8},
+    {"sector": 256, "op": "write", "nr_sectors": 128},
+    {"sector": 512, "op": "write", "nr_sectors": 128}
+  ],
+  "expected_merge": false,
+  "notes": "q_prio ignores ioprio. Classifies: read OR nr_sectors<=8 → high-prio lane; large write (>8 sectors) → low-prio lane. Dispatch: high lane FIFO first, then low lane FIFO. Trace: 3 reads (high) + 2 large writes (low). Expected: R0,R8,R16 then W256,W512. NOTE: sync driver with 1-in-flight → order==submission. Need async for lane priority to matter."
+}

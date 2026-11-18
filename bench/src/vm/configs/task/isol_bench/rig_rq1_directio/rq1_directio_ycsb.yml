@@ -1,0 +1,345 @@
+# rq1_directio_ycsb: RQ1 real-app scheduler comparison on YCSB/RocksDB
+# workloada under the cache=off caliber (O_DIRECT, kvmhost /dev/sdb;
+# runner formats+mounts /mnt/rq1dio_20261102 per case).
+#
+# Purpose: the cache=on RQ1 round (results/rq1_realapps_ycsb/) had the app
+# caches absorbing virtually all foreground reads (YCSB p99 ~5ms = page-cache
+# hits), leaving the device untouched by the foreground and no scheduler
+# headroom. This round re-runs RQ1 with direct I/O so every foreground read
+# reaches /dev/sdb -- the same caliber as the virtme-ng rig_ycsb matrix
+# (results/isol_bench/rig_ycsb, q_fifo 2698 ops/s etc.).
+#
+# cache=off calibration (vs rq1_realapps_ycsb.yml):
+#   - database.use_direct_io: true  (O_DIRECT reads + flush/compaction; scene
+#     generates the options file -- same mechanism as ycsb_global_vng.yml).
+#   - Block cache: CANNOT be disabled for the bundled YCSB rocksdbjni runtime
+#     (block_cache_size is rejected by the ycsb_rocksdb.py guard, see
+#     m1_cache_ab.yml header); it stays at the verified 8 MiB LRU default in
+#     BOTH this caliber and the cache=on caliber -> the caliber difference is
+#     the PAGE-CACHE axis only. Same condition as motivation A/B cache-off arm.
+#   - drop_caches_before_run: true kept (no-op semantics for direct-I/O data
+#     files; kept for uniform discipline across calibers).
+# Device adaptation: NONE to the workload parameters -- recordcount 400000 /
+# operationcount 10M / threads 16 / maxexecutiontime 600 / write_buffer 64MB /
+# field 10x1024 are IDENTICAL to the cache=on round so the three-way compare
+# (virtme vs kvmhost cache=on vs kvmhost cache=off) is workload-constant. Probe
+# will verify the direct-I/O ops/s lands in the expected band
+# (virtme workloada direct = 2454-2698 ops/s; kvmhost sdb single A/B ref =
+# 1274 ops/s from M1CACHE_AB_YCSB_a_cachefix_off; 3x band gate).
+#
+# Arms (7, superset of the cache=on round for the same-table 3-way compare):
+#   RQ1D_YCSB_{NONE, KYBER, MQ_DEADLINE, BFQ}   native schedulers (scene pins)
+#   RQ1D_YCSB_IO_COST   root io.cost model+qos, sdb RECAL calibration
+#   RQ1D_YCSB_IOX_Q_DDL    scx_io + loader_q_ddl (queue-only)
+#   RQ1D_YCSB_IOX_ARB_Q    scx_io + arb_wdrr + loader_q_fifo (arb-dominant,
+#                          the combination labelled iox_arb_q in fig.4)
+# Repeats are runner-controlled (--repeats N -> case <seq>_r<k>).
+#
+# Result convention (results dir, separated from motivation_* and cache=on):
+#   results/rq1_realapps_directio_ycsb/<stage_dir>/
+benchmark_name: "RQ1 direct-I/O YCSB workloada: 7 scheduler/controller arms (cache=off)"
+description: >-
+  Single-tenant YCSB-A on freshly formatted /dev/sdb with O_DIRECT RocksDB,
+  one arm per sequence: native none/kyber/mq-deadline/bfq, root io.cost (sdb
+  RECAL calibration), iox queue-only (loader_q_ddl), iox arbiter+queue
+  (arb_wdrr + q_fifo, arb-dominant). Repeats via the campaign runner.
+default_sequence: "RQ1D_YCSB_NONE"
+fail_fast_on_scene_error: true
+
+_native_none_io_ext: &native_none_io_ext
+  cleanup_stale_when_no_specs: true
+  cleanup_bpffs_pins: true
+
+_iox_scene_io_ext: &iox_scene_io_ext
+  cleanup_stale: false               # global loader scene owns the loader chain
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+_io_cost_model: &io_cost_model
+  ctrl: "user"
+  model: "linear"
+  rbps: 335544320
+  rseqiops: 82000
+  rrandiops: 82000
+  wbps: 335544320
+  wseqiops: 82000
+  wrandiops: 82000
+_io_cost_qos: &io_cost_qos
+  enable: true
+  ctrl: "user"
+  rpct: 95.0
+  rlat: 1000000
+  wpct: 95.0
+  wlat: 1000000
+  min: 50.0
+  max: 150.0
+
+_common_ycsb: &common_ycsb
+  target_device: "sdb"
+  output_dir: "/tmp/rq1dio_20261102/scene/{group_id}"
+  duration: 1100                     # load (~90s direct) + run 600s + resets
+  drop_caches_before_run: true       # uniform discipline; no-op for O_DIRECT data files
+  database:
+    db_type: "rocksdb"
+    data_dir: "/mnt/rq1dio_20261102/ycsb_db"
+    ycsb_dir: "/opt/ioext-bench/src/vm/assets/ycsb/ycsb_runtime"
+    use_direct_io: true              # cache=off caliber: O_DIRECT reads + flush/compaction
+    write_buffer_size: 67108864
+    storage_backend: "kernel_block"
+    environment:
+      JAVA_HOME: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64"
+      PATH: "/tmp/motivation_m2_pilot_20261030_bundle/motivation_m2_pilot_20261030/runtime/java-21-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  system:
+    mem_limit_mb: 0
+    auto_format_disk: true
+    format_device: false             # runner formats+mounts sdb per case
+    mount_options: "noatime,nodiratime"
+    cgroup_path: "/sys/fs/cgroup/rq1dio_ycsb"
+
+_common_ycsb_workload: &common_ycsb_workload
+  recordcount: 400000                # identical to cache=on round + virtme rig
+  operationcount: 10000000
+  threads: 16
+  jvm_args: "-Xms2048m -Xmx2048m"
+  workload_type: "a"
+  properties:
+    fieldcount: 10
+    fieldlength: 1024
+    maxexecutiontime: 600            # identical run window to cache=on round
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - "sdb"
+      output_dir: "/tmp/rq1dio_20261102/monitor/system_metric"
+
+io_ext_policy_profiles:
+  arm_none:
+    name: "rq1dio ycsb native none"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext: *native_none_io_ext
+  arm_kyber:
+    name: "rq1dio ycsb native kyber"
+    target_device: "sdb"
+    scheduler: "kyber"
+    io_ext: *native_none_io_ext
+  arm_mq_deadline:
+    name: "rq1dio ycsb native mq-deadline"
+    target_device: "sdb"
+    scheduler: "mq-deadline"
+    io_ext: *native_none_io_ext
+  arm_bfq:
+    name: "rq1dio ycsb native bfq"
+    target_device: "sdb"
+    scheduler: "bfq"
+    io_ext: *native_none_io_ext
+  arm_io_cost:
+    name: "rq1dio ycsb io.cost root controller"
+    target_device: "sdb"
+    scheduler: "none"
+    io_ext: *native_none_io_ext
+  arm_iox_q_ddl:
+    name: "rq1dio ycsb iox q_ddl (queue-only)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_ddl_root"
+        path: "/opt/io-ext/userspace/loader_q_ddl"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_arb_q:
+    name: "rq1dio ycsb iox arb_wdrr + q_fifo (arb-dominant)"
+    target_device: "sdb"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      arbiters:
+      - name: "arb_wdrr"
+        path: "/opt/io-ext/userspace/loader_arb_wdrr"
+        scope: "arbiter"
+      root_policies:
+      - name: "q_fifo_root"
+        path: "/opt/io-ext/userspace/loader_q_fifo"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+
+tenant_groups:
+  ycsb_none:
+    count: 1
+    scene_id_template: "rq1d_ycsb_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext: *native_none_io_ext
+        ycsb_workload: *common_ycsb_workload
+  ycsb_kyber:
+    count: 1
+    scene_id_template: "rq1d_ycsb_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "kyber"
+        io_ext: *native_none_io_ext
+        ycsb_workload: *common_ycsb_workload
+  ycsb_mq_deadline:
+    count: 1
+    scene_id_template: "rq1d_ycsb_mq_deadline_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "mq-deadline"
+        io_ext: *native_none_io_ext
+        ycsb_workload: *common_ycsb_workload
+  ycsb_bfq:
+    count: 1
+    scene_id_template: "rq1d_ycsb_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "bfq"
+        io_ext: *native_none_io_ext
+        ycsb_workload: *common_ycsb_workload
+  ycsb_io_cost:
+    count: 1
+    scene_id_template: "rq1d_ycsb_io_cost_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "none"
+        io_ext:
+          <<: *native_none_io_ext
+          root_cgroup:
+            path: "/sys/fs/cgroup"
+            controllers:
+            - "io"
+          cgroup:
+            path: "/sys/fs/cgroup/rq1dio_ycsb"
+            controllers:
+            - "io"
+            io_cost:
+              model: *io_cost_model
+              qos: *io_cost_qos
+        ycsb_workload: *common_ycsb_workload
+  ycsb_iox_q_ddl:
+    count: 1
+    scene_id_template: "rq1d_ycsb_iox_q_ddl_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload: *common_ycsb_workload
+  ycsb_iox_arb_q:
+    count: 1
+    scene_id_template: "rq1d_ycsb_iox_arb_q_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/ycsb_rocksdb.yml"
+      parameters:
+        <<: *common_ycsb
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        ycsb_workload: *common_ycsb_workload
+
+test_sequences:
+- sequence_id: "RQ1D_YCSB_NONE"
+  name: "RQ1D YCSB-A O_DIRECT, native none baseline"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "ycsb a none"
+    tenant_groups: ["ycsb_none"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "RQ1D_YCSB_KYBER"
+  name: "RQ1D YCSB-A O_DIRECT, native kyber"
+  io_ext_policy: "arm_kyber"
+  steps:
+  - name: "ycsb a kyber"
+    tenant_groups: ["ycsb_kyber"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "RQ1D_YCSB_MQ_DEADLINE"
+  name: "RQ1D YCSB-A O_DIRECT, native mq-deadline"
+  io_ext_policy: "arm_mq_deadline"
+  steps:
+  - name: "ycsb a mq-deadline"
+    tenant_groups: ["ycsb_mq_deadline"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "RQ1D_YCSB_BFQ"
+  name: "RQ1D YCSB-A O_DIRECT, native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "ycsb a bfq"
+    tenant_groups: ["ycsb_bfq"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "RQ1D_YCSB_IO_COST"
+  name: "RQ1D YCSB-A O_DIRECT, root io.cost (sdb RECAL calibration)"
+  io_ext_policy: "arm_io_cost"
+  steps:
+  - name: "ycsb a io.cost"
+    tenant_groups: ["ycsb_io_cost"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "RQ1D_YCSB_IOX_Q_DDL"
+  name: "RQ1D YCSB-A O_DIRECT, iox queue-only loader_q_ddl"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "ycsb a iox q_ddl"
+    tenant_groups: ["ycsb_iox_q_ddl"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100
+- sequence_id: "RQ1D_YCSB_IOX_ARB_Q"
+  name: "RQ1D YCSB-A O_DIRECT, iox arb_wdrr + q_fifo (arb-dominant)"
+  io_ext_policy: "arm_iox_arb_q"
+  steps:
+  - name: "ycsb a iox arb_q"
+    tenant_groups: ["ycsb_iox_arb_q"]
+    monitoring_scenes: ["ib_system_metric"]
+    monitoring_startup_time: 3
+    duration: 1100

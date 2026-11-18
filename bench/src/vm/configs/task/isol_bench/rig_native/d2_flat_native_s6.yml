@@ -1,0 +1,739 @@
+benchmark_name: isol_bench rig D2 native fairness s6 io.cost scan (kvmhost/sdb)
+description: 'Session 6: io.cost evidence chain, 6 arms.'
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_native/d2/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_native/d2/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_native/d2/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_native/d2/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+io_ext_policy_profiles:
+  N_io_cost:
+    name: rig native io_cost
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  N_io_cost_calib:
+    name: rig native io_cost_calib
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  N_io_cost_calib10:
+    name: rig native io_cost_calib10
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  N_io_cost_calib_tight:
+    name: rig native io_cost_calib_tight
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  N_io_bfq_weight:
+    name: rig native io_bfq_weight
+    target_device: sdb
+    scheduler: bfq
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  N_io_max:
+    name: rig native io_max
+    target_device: sdb
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+tenant_groups:
+  d2_io_cost:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_io_cost_t{idx1}
+    collapsed_scene_id: ib_rig_d2_io_cost_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d2_s6/io_cost
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_io_cost_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 2706339840
+                rseqiops: 786432
+                rrandiops: 786432
+                wbps: 1063126016
+                wseqiops: 135560
+                wrandiops: 130734
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 95.0
+                rlat: 1000000
+                wpct: 95.0
+                wlat: 1000000
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 100
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 200
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 300
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 400
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 500
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 600
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 700
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 800
+  d2_io_cost_calib:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_io_cost_calib_t{idx1}
+    collapsed_scene_id: ib_rig_d2_io_cost_calib_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d2_s6/io_cost_calib
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_io_cost_calib_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 335544320
+                rseqiops: 82000
+                rrandiops: 82000
+                wbps: 335544320
+                wseqiops: 82000
+                wrandiops: 82000
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 95.0
+                rlat: 20000
+                wpct: 95.0
+                wlat: 20000
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 100
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 200
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 300
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 400
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 500
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 600
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 700
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 800
+  d2_io_cost_calib10:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_io_cost_calib10_t{idx1}
+    collapsed_scene_id: ib_rig_d2_io_cost_calib10_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d2_s6/io_cost_calib10
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_io_cost_calib10_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 335544320
+                rseqiops: 82000
+                rrandiops: 82000
+                wbps: 335544320
+                wseqiops: 82000
+                wrandiops: 82000
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 95.0
+                rlat: 10000
+                wpct: 95.0
+                wlat: 10000
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 100
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 200
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 300
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 400
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 500
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 600
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 700
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 800
+  d2_io_cost_calib_tight:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_io_cost_calib_tight_t{idx1}
+    collapsed_scene_id: ib_rig_d2_io_cost_calib_tight_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d2_s6/io_cost_calib_tight
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_io_cost_calib_tight_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              model:
+                ctrl: user
+                model: linear
+                rbps: 335544320
+                rseqiops: 82000
+                rrandiops: 82000
+                wbps: 335544320
+                wseqiops: 82000
+                wrandiops: 82000
+              qos:
+                enable: true
+                ctrl: user
+                rpct: 95.0
+                rlat: 5000
+                wpct: 95.0
+                wlat: 5000
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 100
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 200
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 300
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 400
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 500
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 600
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 700
+    - parameters:
+        io_ext:
+          cgroup:
+            io_weight: 800
+  d2_io_bfq_weight:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_io_bfq_weight_t{idx1}
+    collapsed_scene_id: ib_rig_d2_io_bfq_weight_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: bfq
+        scheduler_tunables:
+          low_latency: 0
+          slice_idle: 1
+        output_dir: ./test_results/isol_bench/rig_native/d2_s6/io_bfq_weight
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_io_bfq_weight_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 100
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 200
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 300
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 400
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 500
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 600
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 700
+    - parameters:
+        io_ext:
+          cgroup:
+            io_bfq_weight: 800
+  d2_io_max:
+    count: 8
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d2_io_max_t{idx1}
+    collapsed_scene_id: ib_rig_d2_io_max_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_native/d2_s6/io_max
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 55
+          ramp_time: 10
+          time_based: true
+          group_reporting: true
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d2_io_max_t{idx1}
+            controllers:
+            - io
+            io_weight: 100
+            io_max:
+              rbps: max
+              wbps: max
+              riops: max
+              wiops: max
+            io_cost:
+              qos:
+                enable: false
+    per_tenant:
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 9320675
+              wbps: 9320675
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 18641351
+              wbps: 18641351
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 27962026
+              wbps: 27962026
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 37282702
+              wbps: 37282702
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 46603377
+              wbps: 46603377
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 55924053
+              wbps: 55924053
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 65244728
+              wbps: 65244728
+              riops: max
+              wiops: max
+    - parameters:
+        io_ext:
+          cgroup:
+            io_max:
+              rbps: 74565404
+              wbps: 74565404
+              riops: max
+              wiops: max
+test_sequences:
+- sequence_id: D2_saturated_weighted_io_cost_cg8_iter1
+  name: D2 saturated weighted native io_cost cg=8
+  io_ext_policy: N_io_cost
+  steps:
+  - name: saturated weighted cg=8 native io_cost
+    tenant_groups:
+    - d2_io_cost
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_io_cost_calib_cg8_iter1
+  name: D2 saturated weighted native io_cost_calib cg=8
+  io_ext_policy: N_io_cost_calib
+  steps:
+  - name: saturated weighted cg=8 native io_cost_calib
+    tenant_groups:
+    - d2_io_cost_calib
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_io_cost_calib10_cg8_iter1
+  name: D2 saturated weighted native io_cost_calib10 cg=8
+  io_ext_policy: N_io_cost_calib10
+  steps:
+  - name: saturated weighted cg=8 native io_cost_calib10
+    tenant_groups:
+    - d2_io_cost_calib10
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_io_cost_calib_tight_cg8_iter1
+  name: D2 saturated weighted native io_cost_calib_tight cg=8
+  io_ext_policy: N_io_cost_calib_tight
+  steps:
+  - name: saturated weighted cg=8 native io_cost_calib_tight
+    tenant_groups:
+    - d2_io_cost_calib_tight
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_io_bfq_weight_cg8_iter1
+  name: D2 saturated weighted native io_bfq_weight cg=8
+  io_ext_policy: N_io_bfq_weight
+  steps:
+  - name: saturated weighted cg=8 native io_bfq_weight
+    tenant_groups:
+    - d2_io_bfq_weight
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+- sequence_id: D2_saturated_weighted_io_max_cg8_iter1
+  name: D2 saturated weighted native io_max cg=8
+  io_ext_policy: N_io_max
+  steps:
+  - name: saturated weighted cg=8 native io_max
+    tenant_groups:
+    - d2_io_max
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    monitoring_startup_time: 3
+    duration: 120
+    tenant_count: 8
+default_sequence: D2_saturated_weighted_io_cost_cg8_iter1
+fail_fast_on_scene_error: true

@@ -1,0 +1,16 @@
+{
+  "name": "mqdd_rev_5",
+  "tier": 2,
+  "match": "exact",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "C-LOOK ascending when resident: submit 4608,4096,3584,3072,2560 descending → dispatch ascending",
+  "expected_dispatch_order": [
+    {"sector": 2560, "op": "read", "nr_sectors": 8},
+    {"sector": 3072, "op": "read", "nr_sectors": 8},
+    {"sector": 3584, "op": "read", "nr_sectors": 8},
+    {"sector": 4096, "op": "read", "nr_sectors": 8},
+    {"sector": 4608, "op": "read", "nr_sectors": 8}
+  ],
+  "expected_merge": false,
+  "notes": "Phase-2 rework: merge-proof sectors (512-sector gaps, above the partition-scan zone 0..2048). expected_merge now false — 5 unmerged requests reach the scheduler (5 INSERTs; G2 honest). Descending submit -> all resident -> C-LOOK picks ascending [2560..4608]: proves reordering vs arrival order [4608..2560]."
+}

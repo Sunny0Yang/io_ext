@@ -1,0 +1,33 @@
+{
+  "schema": "homo_v2_bm_calibration_v1",
+  "host": "bm",
+  "hostname": "user",
+  "target_device": "nvme0n1",
+  "measurement_date": "2026-11-06",
+  "source": "experiments/dyn_tenant_bm/contract/iocost_coef.json",
+  "method": "iocost_coef_gen_bm file mode on the root filesystem; direct regular-file I/O",
+  "iocost_model": {
+    "ctrl": "user",
+    "model": "linear",
+    "rbps": 1877961028,
+    "rseqiops": 436504,
+    "rrandiops": 504812,
+    "wbps": 1895474286,
+    "wseqiops": 436118,
+    "wrandiops": 324051
+  },
+  "homo_v2_qos": {
+    "enable": true,
+    "ctrl": "user",
+    "rpct": 99.0,
+    "rlat": 2000,
+    "wpct": 95.0,
+    "wlat": 1000000,
+    "min": 50.0,
+    "max": 150.0
+  },
+  "notes": [
+    "The six model coefficients are host measurements, not the kvmhost 320 MiB/s fallback.",
+    "The homo-v2 QoS target remains the frozen 2 ms experiment design and is not imported from dyn_tenant_bm."
+  ]
+}

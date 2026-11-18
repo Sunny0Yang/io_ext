@@ -1,0 +1,436 @@
+benchmark_name: isol_bench rig D3 iox cgroup dual-subtree topology (kvmhost/sdb)
+description: "Rig D3 iox T3: 1 LC + 4 BE under lc/be subtrees, arb_wdrr hetero, {treedeleg, treedeleg_w400, treeleaf} policy mounts (design \xA76; treedeleg_w400 = be/ root -W 400 aggregate-mirror probe,\
+  \ Session 7B B3)."
+scenes:
+  ib_system_metric:
+    base_scene: scene/system/system_metric.yml
+    parameters:
+      collection_mode: proc
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      disk_devices:
+      - sdb
+      output_dir: ./test_results/isol_bench/rig_iox/d3t/system_metric
+  ib_block_io_latency_cost:
+    base_scene: scene/block_bpf/block_io_latency_cost.yml
+    parameters:
+      output_dir: ./test_results/isol_bench/rig_iox/d3t/block_io_latency_cost
+      output_file: ./test_results/isol_bench/rig_iox/d3t/block_io_latency_cost/block_io_latency_cost.bpftrace.log
+      summary_file: ./test_results/isol_bench/rig_iox/d3t/block_io_latency_cost/block_io_latency_cost_summary.json
+      require_events: false
+      privilege:
+        method: sudo_nopasswd
+  ib_scx_io_bypass_fallback:
+    base_scene: scene/block_bpf/scx_io_bypass_fallback.yml
+    parameters:
+      require_events: false
+      output_dir: ./test_results/isol_bench/rig_iox/d3t/scx_io_bypass_fallback
+io_ext_policy_profiles:
+  iox_arb_wdrr_treedeleg_hetero:
+    name: rig iox arb_wdrr treedeleg hetero
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: &id001
+      - loader_arb_
+      - loader_q_
+      - loader_minimal
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+      cgroup_policies:
+      - name: q_sp_edf_lc
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg/lc
+        - -p
+        - '0'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg/lc
+      - name: q_fifo_be
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg/be
+        - -p
+        - '7'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg/be
+  iox_arb_wdrr_treedeleg_w400_hetero:
+    name: rig iox arb_wdrr treedeleg_w400 hetero
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+      cgroup_policies:
+      - name: q_sp_edf_lc
+        path: /opt/io-ext/userspace/loader_q_sp_edf
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg_w400/lc
+        - -p
+        - '0'
+        - -W
+        - '100'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg_w400/lc
+      - name: q_fifo_be
+        path: /opt/io-ext/userspace/loader_q_fifo
+        scope: cgroup_policy
+        args:
+        - -c
+        - /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg_w400/be
+        - -p
+        - '7'
+        - -W
+        - '400'
+        policy_cgroup_path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg_w400/be
+  iox_arb_wdrr_treeleaf_hetero:
+    name: rig iox arb_wdrr treeleaf hetero
+    target_device: sdb
+    scheduler: scx_io
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns: *id001
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+      arbiters:
+      - name: arb_wdrr
+        path: /opt/io-ext/userspace/loader_arb_wdrr
+        scope: arbiter
+    cgroup_policies_from_groups:
+    - tenant_group: d3t_lc_treeleaf
+      name_template: q_sp_edf_lc
+      path: /opt/io-ext/userspace/loader_q_sp_edf
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '0'
+    - tenant_group: d3t_be_treeleaf
+      name_template: q_fifo_be
+      path: /opt/io-ext/userspace/loader_q_fifo
+      scope: cgroup_policy
+      args:
+      - -c
+      - '{policy_cgroup_path}'
+      - -p
+      - '7'
+tenant_groups:
+  d3t_lc_treedeleg:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3t_lc_treedeleg
+    collapsed_scene_id: ib_rig_d3t_lc_treedeleg_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d3t/lc/treedeleg
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg/lc/lc_t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d3t_be_treedeleg:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3t_be_treedeleg_t{idx1}
+    collapsed_scene_id: ib_rig_d3t_be_treedeleg_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d3t/be/treedeleg
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d3t_lc_treedeleg_w400:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3t_lc_treedeleg_w400
+    collapsed_scene_id: ib_rig_d3t_lc_treedeleg_w400_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d3t/lc/treedeleg_w400
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg_w400/lc/lc_t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d3t_be_treedeleg_w400:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3t_be_treedeleg_w400_t{idx1}
+    collapsed_scene_id: ib_rig_d3t_be_treedeleg_w400_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d3t/be/treedeleg_w400
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treedeleg_w400/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d3t_lc_treeleaf:
+    count: 1
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3t_lc_treeleaf
+    collapsed_scene_id: ib_rig_d3t_lc_treeleaf_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d3t/lc/treeleaf
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 1
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treeleaf/lc/lc_t1
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+  d3t_be_treeleaf:
+    count: 4
+    execution_mode: fio_subjob
+    scene_id_template: ib_rig_d3t_be_treeleaf_t{idx1}
+    collapsed_scene_id: ib_rig_d3t_be_treeleaf_subjob
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: sdb
+        file_name: /dev/sdb
+        scheduler: scx_io
+        output_dir: ./test_results/isol_bench/rig_iox/d3t/be/treeleaf
+        duration: 120
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: libaio
+          direct: 1
+          bs: 4k
+          rw: randread
+          iodepth: 256
+          numjobs: 1
+          runtime_sec: 60
+          time_based: true
+          group_reporting: true
+          ramp_time: 20
+          percentile_list: 20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100
+        io_ext:
+          cleanup_stale: false
+          cleanup_bpffs_pins: false
+          loaders: []
+          cgroup_policies: []
+          cgroup:
+            path: /sys/fs/cgroup/ib_rig_d3t_arb_wdrr_treeleaf/be/be_t{idx1}
+            controllers:
+            - io
+            io_weight: null
+            io_max: null
+            io_cost:
+              qos:
+                enable: false
+test_sequences:
+- sequence_id: D3LC_rread_4k_iox_arb_wdrr_treedeleg_hetero
+  name: D3 LC rread_4k iox arb_wdrr treedeleg hetero
+  io_ext_policy: iox_arb_wdrr_treedeleg_hetero
+  workload: rread_4k
+  steps:
+  - name: 1 LC + 4 BE hetero arb_wdrr treedeleg
+    tenant_groups:
+    - d3t_lc_treedeleg
+    - d3t_be_treedeleg
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_iox_arb_wdrr_treedeleg_w400_hetero
+  name: D3 LC rread_4k iox arb_wdrr treedeleg_w400 hetero
+  io_ext_policy: iox_arb_wdrr_treedeleg_w400_hetero
+  workload: rread_4k
+  steps:
+  - name: 1 LC + 4 BE hetero arb_wdrr treedeleg_w400
+    tenant_groups:
+    - d3t_lc_treedeleg_w400
+    - d3t_be_treedeleg_w400
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+- sequence_id: D3LC_rread_4k_iox_arb_wdrr_treeleaf_hetero
+  name: D3 LC rread_4k iox arb_wdrr treeleaf hetero
+  io_ext_policy: iox_arb_wdrr_treeleaf_hetero
+  workload: rread_4k
+  steps:
+  - name: 1 LC + 4 BE hetero arb_wdrr treeleaf
+    tenant_groups:
+    - d3t_lc_treeleaf
+    - d3t_be_treeleaf
+    monitoring_scenes:
+    - ib_system_metric
+    - ib_block_io_latency_cost
+    - ib_scx_io_bypass_fallback
+    monitoring_startup_time: 3
+    duration: 120
+default_sequence: D3LC_rread_4k_iox_arb_wdrr_treedeleg_hetero
+fail_fast_on_scene_error: true

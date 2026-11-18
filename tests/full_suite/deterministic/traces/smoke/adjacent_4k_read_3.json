@@ -1,0 +1,1 @@
+{"name":"adjacent_4k_read_3","requests":[{"op":"read","sector":0,"nr_sectors":8,"ioprio":0},{"op":"read","sector":8,"nr_sectors":8,"ioprio":0},{"op":"read","sector":16,"nr_sectors":8,"ioprio":0}]}

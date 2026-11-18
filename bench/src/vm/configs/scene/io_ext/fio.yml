@@ -1,0 +1,38 @@
+name: "io-ext FIO randread workload template"
+id: "ioext_fio_randread_workload"
+type: "io_ext"
+class_name: "IoExtFioScene"
+module_path: "vm.scene.io_ext.fio"
+parameters:
+  target_device: "nvme0n1"
+  scheduler: "default"
+  job_name: "ioext_fio_randread"
+  fio_global:
+    ioengine: "libaio"
+    direct: 1
+    bs: "4k"
+    rw: "randread"
+    iodepth: 2
+    numjobs: 1
+    runtime_sec: 10
+    time_based: 1
+    group_reporting: 1
+  # Wins over fio_global.numjobs. Task YAML must override this list to change
+  # process count; setting only numjobs: 4 is a no-op. D2 uses 1 process/cgroup.
+  concurrency_levels: [1]
+  io_ext:
+    cgroup:
+      path: "/sys/fs/cgroup/ioext_fio_randread_workload"
+      controllers: ["io"]
+      # io_weight 标量会写入 cgroup 默认权重（default 100），兼容 virtme-ng/NVMe；
+      # 如需设备级权重覆盖，可用映射形式 {default: 100, device: 500}。
+      io_weight: 100
+      # io_max 支持 rbps/wbps/riops/wiops；"max" 表示不设置硬限速。
+      io_max:
+        rbps: "max"
+        wbps: "max"
+        riops: "max"
+        wiops: "max"
+  drop_caches_before_run: true
+  cooldown_sec: 1
+  output_dir: "./test_results/io_ext/fio"

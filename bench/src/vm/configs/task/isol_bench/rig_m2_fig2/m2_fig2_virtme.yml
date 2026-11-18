@@ -1,0 +1,933 @@
+benchmark_name: isol_bench rig M2 fig2 replication (virtme)
+description: 'M2'' motivation: near-verbatim replication of isol-bench paper Fig. 2 (IISWC''25) cgroups
+  I/O knob arms + native kyber arm; three identical 64K randread QD8 fio apps rate-limited to the calibrated
+  cap, staggered A 0-50s / B 10-70s / C 20-50s.'
+fail_fast_on_scene_error: true
+io_ext_policy_profiles:
+  F2_a_none:
+    name: M2F2 fig2 arm a_none
+    target_device: nvme0n1
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  F2_b_mqdl_prio:
+    name: M2F2 fig2 arm b_mqdl_prio
+    target_device: nvme0n1
+    scheduler: mq-deadline
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  F2_c_bfq:
+    name: M2F2 fig2 arm c_bfq
+    target_device: nvme0n1
+    scheduler: bfq
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  F2_d_bfq_weight:
+    name: M2F2 fig2 arm d_bfq_weight
+    target_device: nvme0n1
+    scheduler: bfq
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  F2_e_io_max:
+    name: M2F2 fig2 arm e_io_max
+    target_device: nvme0n1
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  F2_g_io_cost:
+    name: M2F2 fig2 arm g_io_cost
+    target_device: nvme0n1
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  F2_h_io_cost_weight:
+    name: M2F2 fig2 arm h_io_cost_weight
+    target_device: nvme0n1
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+      root_cgroup:
+        path: /sys/fs/cgroup
+        controllers:
+        - io
+  F2_i_native_kyber:
+    name: M2F2 fig2 arm i_native_kyber
+    target_device: nvme0n1
+    scheduler: kyber
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  F2_f_io_latency:
+    name: M2F2 fig2 arm f_io_latency
+    target_device: nvme0n1
+    scheduler: none
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+tenant_groups:
+  m2f2_a_none:
+    count: 3
+    scene_id_template: ib_m2f2_a_none_t_{idx1}
+    name_template: M2F2 (a) No knob or I/O scheduler tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/a_none
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_a_none_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    per_tenant:
+    - parameters:
+        job_name: m2f2_a_none_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_a_none_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    - parameters:
+        job_name: m2f2_a_none_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_a_none_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    - parameters:
+        job_name: m2f2_a_none_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_a_none_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+  m2f2_b_mqdl_prio:
+    count: 3
+    scene_id_template: ib_m2f2_b_mqdl_prio_t_{idx1}
+    name_template: M2F2 (b) MQ-DL + io.prio.class tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: mq-deadline
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/b_mqdl_prio
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_b_mqdl_prio_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_prio_class: promote-to-rt
+    per_tenant:
+    - parameters:
+        job_name: m2f2_b_mqdl_prio_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_b_mqdl_prio_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_prio_class: promote-to-rt
+    - parameters:
+        job_name: m2f2_b_mqdl_prio_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_b_mqdl_prio_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_prio_class: idle
+    - parameters:
+        job_name: m2f2_b_mqdl_prio_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_b_mqdl_prio_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_prio_class: restrict-to-be
+  m2f2_c_bfq:
+    count: 3
+    scene_id_template: ib_m2f2_c_bfq_t_{idx1}
+    name_template: M2F2 (c) BFQ + no knob tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: bfq
+        scheduler_tunables: &id001
+          low_latency: 0
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/c_bfq
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_c_bfq_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    per_tenant:
+    - parameters:
+        job_name: m2f2_c_bfq_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_c_bfq_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    - parameters:
+        job_name: m2f2_c_bfq_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_c_bfq_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    - parameters:
+        job_name: m2f2_c_bfq_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_c_bfq_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+  m2f2_d_bfq_weight:
+    count: 3
+    scene_id_template: ib_m2f2_d_bfq_weight_t_{idx1}
+    name_template: M2F2 (d) BFQ + io.bfq.weight tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: bfq
+        scheduler_tunables: *id001
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/d_bfq_weight
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_d_bfq_weight_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_bfq_weight: 1000
+    per_tenant:
+    - parameters:
+        job_name: m2f2_d_bfq_weight_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_d_bfq_weight_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_bfq_weight: 1000
+    - parameters:
+        job_name: m2f2_d_bfq_weight_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_d_bfq_weight_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_bfq_weight: 1
+    - parameters:
+        job_name: m2f2_d_bfq_weight_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_d_bfq_weight_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_bfq_weight: 100
+  m2f2_e_io_max:
+    count: 3
+    scene_id_template: ib_m2f2_e_io_max_t_{idx1}
+    name_template: M2F2 (e) io.max tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/e_io_max
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_e_io_max_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_max:
+              rbps: 1113587712
+              wbps: max
+              riops: max
+              wiops: max
+    per_tenant:
+    - parameters:
+        job_name: m2f2_e_io_max_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_e_io_max_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_max:
+              rbps: 1113587712
+              wbps: max
+              riops: max
+              wiops: max
+    - parameters:
+        job_name: m2f2_e_io_max_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_e_io_max_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_max:
+              rbps: 371195904
+              wbps: max
+              riops: max
+              wiops: max
+    - parameters:
+        job_name: m2f2_e_io_max_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_e_io_max_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_max:
+              rbps: 371195904
+              wbps: max
+              riops: max
+              wiops: max
+  m2f2_g_io_cost:
+    count: 3
+    scene_id_template: ib_m2f2_g_io_cost_t_{idx1}
+    name_template: M2F2 (g) io.cost tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/g_io_cost
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_g_io_cost_t_a
+            controllers:
+            - io
+            io_cost:
+              model: &id002
+                ctrl: user
+                model: linear
+                rbps: 1425208128
+                rseqiops: 347951
+                rrandiops: 21746
+                wbps: 1425208128
+                wseqiops: 347951
+                wrandiops: 21746
+              qos: &id003
+                enable: true
+                ctrl: user
+                rpct: 95.0
+                rlat: 20000
+                wpct: 95.0
+                wlat: 20000
+                min: 50.0
+                max: 150.0
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+    per_tenant:
+    - parameters:
+        job_name: m2f2_g_io_cost_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_g_io_cost_t_a
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+    - parameters:
+        job_name: m2f2_g_io_cost_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_g_io_cost_t_b
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+    - parameters:
+        job_name: m2f2_g_io_cost_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_g_io_cost_t_c
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+  m2f2_h_io_cost_weight:
+    count: 3
+    scene_id_template: ib_m2f2_h_io_cost_weight_t_{idx1}
+    name_template: M2F2 (h) io.cost + io.weight tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/h_io_cost_weight
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_h_io_cost_weight_t_a
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+            io_weight: 1000
+          root_cgroup:
+            path: /sys/fs/cgroup
+            controllers:
+            - io
+    per_tenant:
+    - parameters:
+        job_name: m2f2_h_io_cost_weight_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_h_io_cost_weight_t_a
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+            io_weight: 1000
+    - parameters:
+        job_name: m2f2_h_io_cost_weight_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_h_io_cost_weight_t_b
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+            io_weight: 1
+    - parameters:
+        job_name: m2f2_h_io_cost_weight_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_h_io_cost_weight_t_c
+            controllers:
+            - io
+            io_cost:
+              model: *id002
+              qos: *id003
+            io_weight: 100
+  m2f2_i_native_kyber:
+    count: 3
+    scene_id_template: ib_m2f2_i_native_kyber_t_{idx1}
+    name_template: M2F2 (i) Native kyber (added arm) tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: kyber
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/i_native_kyber
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_i_native_kyber_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    per_tenant:
+    - parameters:
+        job_name: m2f2_i_native_kyber_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_i_native_kyber_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    - parameters:
+        job_name: m2f2_i_native_kyber_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_i_native_kyber_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+    - parameters:
+        job_name: m2f2_i_native_kyber_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_i_native_kyber_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+  m2f2_f_io_latency:
+    count: 3
+    scene_id_template: ib_m2f2_f_io_latency_t_{idx1}
+    name_template: M2F2 (f) io.latency tenant {idx1}
+    template:
+      base_scene: scene/io_ext/fio.yml
+      parameters:
+        target_device: nvme0n1
+        file_name: /dev/nvme0n1
+        scheduler: none
+        scheduler_tunables: {}
+        output_dir: ./test_results/isol_bench/rig_m2_fig2/f_io_latency
+        duration: 110
+        drop_caches_before_run: false
+        cooldown_sec: 1
+        fio_global:
+          ioengine: io_uring
+          direct: 1
+          bs: 64k
+          rw: randread
+          iodepth: 8
+          numjobs: 1
+          rate: 1087M
+          runtime_sec: 50
+          startdelay: 0
+          time_based: true
+          group_reporting: true
+          log_avg_msec: 1000
+          write_bw_log: bw
+        io_ext:
+          cleanup_stale_when_no_specs: true
+          cleanup_bpffs_pins: true
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_f_io_latency_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_latency: 20
+    per_tenant:
+    - parameters:
+        job_name: m2f2_f_io_latency_a
+        fio_global:
+          runtime_sec: 50
+          startdelay: 0
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_f_io_latency_t_a
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_latency: 20
+    - parameters:
+        job_name: m2f2_f_io_latency_b
+        fio_global:
+          runtime_sec: 60
+          startdelay: 10
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_f_io_latency_t_b
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_latency: 1000
+    - parameters:
+        job_name: m2f2_f_io_latency_c
+        fio_global:
+          runtime_sec: 30
+          startdelay: 20
+        io_ext:
+          cgroup:
+            path: /sys/fs/cgroup/ib_m2f2_f_io_latency_t_c
+            controllers:
+            - io
+            io_cost:
+              qos:
+                enable: false
+            io_latency: 100
+test_sequences:
+- sequence_id: M2F2_a_none
+  name: M2F2 fig2 replication (a) No knob or I/O scheduler
+  io_ext_policy: F2_a_none
+  steps:
+  - name: m2f2 a_none
+    tenant_groups:
+    - m2f2_a_none
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_b_mqdl_prio
+  name: M2F2 fig2 replication (b) MQ-DL + io.prio.class
+  io_ext_policy: F2_b_mqdl_prio
+  steps:
+  - name: m2f2 b_mqdl_prio
+    tenant_groups:
+    - m2f2_b_mqdl_prio
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_c_bfq
+  name: M2F2 fig2 replication (c) BFQ + no knob
+  io_ext_policy: F2_c_bfq
+  steps:
+  - name: m2f2 c_bfq
+    tenant_groups:
+    - m2f2_c_bfq
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_d_bfq_weight
+  name: M2F2 fig2 replication (d) BFQ + io.bfq.weight
+  io_ext_policy: F2_d_bfq_weight
+  steps:
+  - name: m2f2 d_bfq_weight
+    tenant_groups:
+    - m2f2_d_bfq_weight
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_e_io_max
+  name: M2F2 fig2 replication (e) io.max
+  io_ext_policy: F2_e_io_max
+  steps:
+  - name: m2f2 e_io_max
+    tenant_groups:
+    - m2f2_e_io_max
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_g_io_cost
+  name: M2F2 fig2 replication (g) io.cost
+  io_ext_policy: F2_g_io_cost
+  steps:
+  - name: m2f2 g_io_cost
+    tenant_groups:
+    - m2f2_g_io_cost
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_h_io_cost_weight
+  name: M2F2 fig2 replication (h) io.cost + io.weight
+  io_ext_policy: F2_h_io_cost_weight
+  steps:
+  - name: m2f2 h_io_cost_weight
+    tenant_groups:
+    - m2f2_h_io_cost_weight
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_i_native_kyber
+  name: M2F2 fig2 replication (i) Native kyber (added arm)
+  io_ext_policy: F2_i_native_kyber
+  steps:
+  - name: m2f2 i_native_kyber
+    tenant_groups:
+    - m2f2_i_native_kyber
+    duration: 110
+    tenant_count: 3
+- sequence_id: M2F2_f_io_latency
+  name: M2F2 fig2 replication (f) io.latency
+  io_ext_policy: F2_f_io_latency
+  steps:
+  - name: m2f2 f_io_latency
+    tenant_groups:
+    - m2f2_f_io_latency
+    duration: 110
+    tenant_count: 3
+default_sequence: M2F2_a_none

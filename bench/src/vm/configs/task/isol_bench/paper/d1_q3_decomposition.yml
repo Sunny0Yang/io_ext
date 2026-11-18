@@ -1,0 +1,415 @@
+# [RECAL markers for the CloudLab NVMe track -- hand-maintained file]
+#   RECAL(DEVICE)  target_device=nvme0n1 (file_name=/dev/nvme0n1)
+#   RECAL(CPUBIND) batch cpu pinning='1-10' (paper design: 10 batch cores;
+#     INVALID on hosts with <11 CPUs -- kvmhost has 6 vCPUs, use 1-5 there)
+#   RECAL(LOADERS) loader path=/opt/io-ext/userspace/loader_* (deploy per host)
+#   REMOVED 2026-10-21: arb_wfq / arb_hwfq / local_ddl deleted from grids
+#     (no source in ioext, proposal-only; niches covered by arb_wdrr /
+#     q_ddl/q_sp_edf / the T2-T3 topology arms).
+benchmark_name: isol_bench D1-Q3 framework tax decomposition (iosched_ext)
+description: >-
+  D1-Q3 decomposition: incremental framework overhead breakdown on NVMe.
+  Measures the per-layer tax of iosched-ext by progressing through
+  none → iox_bare → iox_none → iox_fallback → iox_fifo → iox_arb_noop.
+  Each step isolates one architectural layer:
+    none          = native kernel noop (absolute floor)
+    iox_bare      = scx_io substrate loaded, no BPF policies
+    iox_none      = q_none root policy (BPF enter+defer to fallback)
+    iox_fallback  = minimal root policy (hook-only tax)
+    iox_fifo      = q_fifo root policy (BPF queue push/pop)
+    iox_arb_noop  = arb_noop arbiter + q_fifo (arbiter invocation tax)
+  Two workload tracks (LC QD=1 and Batch QD=256) run side-by-side so the
+  decomposition covers both latency-bound and bandwidth-bound regimes.
+  Uses fio_subjob execution mode for efficient multi-tenant scaling.
+  Reference: ref/gpt-matrix/hierarchy-upgrade.md E3; matrix-and-goal.md D1-A.
+
+# ── Anchors ──────────────────────────────────────────────────────────────────
+_unlimited_io_max: &unlimited_io_max
+  rbps: "max"
+  wbps: "max"
+  riops: "max"
+  wiops: "max"
+
+_fio_lc: &fio_lc
+  ioengine: "io_uring"
+  fixedbufs: 1
+  registerfiles: 1
+  direct: 1
+  bs: "4k"
+  rw: "randread"
+  iodepth: 1
+  numjobs: 1
+  runtime_sec: 60
+  time_based: true
+  group_reporting: true
+  ramp_time: 20
+  percentile_list: "20:25:30:35:40:45:50:55:60:65:70:75:80:85:90:95:99:99.9:99.99:100"
+
+_fio_batch: &fio_batch
+  ioengine: "libaio"
+  direct: 1
+  bs: "4k"
+  rw: "randread"
+  iodepth: 256
+  numjobs: 1
+  runtime_sec: 60
+  time_based: true
+  group_reporting: true
+  ramp_time: 20
+  cpus_allowed: "1-10"
+
+_common_params: &common_params
+  target_device: "nvme0n1"
+  file_name: "/dev/nvme0n1"
+  scheduler_tunables: {}
+  output_dir: "./test_results/isol_bench/paper/d1_q3/{group_id}"
+  duration: 120
+  drop_caches_before_run: false
+  cooldown_sec: 1
+
+_native_params: &native_params
+  <<: *common_params
+  scheduler: "none"
+
+_scx_params: &scx_params
+  <<: *common_params
+  scheduler: "scx_io"
+
+_io_ext_cleanup: &io_ext_cleanup
+  cleanup_stale: true
+  cleanup_bpffs_pins: true
+  stale_loader_patterns:
+    - "loader_arb_"
+    - "loader_q_"
+    - "loader_minimal"
+  root_cgroup:
+    path: "/sys/fs/cgroup"
+    controllers: ["io"]
+
+_io_ext_passthrough: &io_ext_passthrough
+  cleanup_stale: false
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+
+_cgroup_unlimited: &cgroup_unlimited
+  path: "/sys/fs/cgroup/{group_id}_tenant_{idx1}"
+  controllers: ["io"]
+  io_weight: 100
+  io_max: *unlimited_io_max
+  io_cost:
+    qos:
+      enable: false
+
+# IOX tenant cgroup: attach-only (weights travel via loader -W / arbiter);
+# io_weight/io_max null blocks base-scene default re-injection (rig contract).
+_cgroup_iox: &cgroup_iox
+  path: "/sys/fs/cgroup/{group_id}_tenant_{idx1}"
+  controllers: ["io"]
+  io_weight: null
+  io_max: null
+  io_cost:
+    qos:
+      enable: false
+
+# ── Monitoring scenes ─────────────────────────────────────────────────────────
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 120
+      require_samples: true
+      output_dir: "./test_results/isol_bench/paper/d1_q3/system_metric"
+  ib_perf_stat:
+    base_scene: "scene/system/perf_stat.yml"
+    parameters:
+      cpu_list: "2"
+      sample_interval_ms: 1000
+      require_available: false
+      output_dir: "./test_results/isol_bench/paper/d1_q3/perf_stat"
+
+# ── io_ext policy profiles (decomposition ladder) ─────────────────────────────
+io_ext_policy_profiles:
+  nat_none:
+    name: "D1-Q3 native none (floor)"
+    target_device: "nvme0n1"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  iox_bare:
+    name: "D1-Q3 iox_bare (scx_io substrate, no policies)"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+  iox_none:
+    name: "D1-Q3 iox_none (q_none root: BPF enter+defer)"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      root_policies:
+        - name: "q_none_root"
+          path: "/opt/io-ext/userspace/loader_q_none"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+  iox_fallback:
+    name: "D1-Q3 iox_fallback (minimal root: hook-only tax)"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      root_policies:
+        - name: "minimal_root"
+          path: "/opt/io-ext/userspace/loader_minimal"
+          scope: "root_policy"
+          args: ["{policy_cgroup_path}"]
+  iox_fifo:
+    name: "D1-Q3 iox_fifo (q_fifo root: BPF FIFO queue)"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      root_policies:
+        - name: "q_fifo_root"
+          path: "/opt/io-ext/userspace/loader_q_fifo"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+  iox_arb_noop:
+    name: "D1-Q3 iox_arb_noop (arb_noop + q_fifo: arbiter invocation tax)"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      <<: *io_ext_cleanup
+      arbiters:
+        - name: "arb_noop"
+          path: "/opt/io-ext/userspace/loader_arb_noop"
+          scope: "arbiter"
+          args: []
+      root_policies:
+        - name: "q_fifo_root"
+          path: "/opt/io-ext/userspace/loader_q_fifo"
+          scope: "root_policy"
+          args: ["-c", "{policy_cgroup_path}"]
+
+# ── tenant_groups: LC (QD=1) and Batch (QD=256) for each profile ──────────────
+tenant_groups:
+  # === LC track (QD=1, latency-sensitive) ===
+  lc_native_none:
+    count: 1
+    scene_id_template: "ib_d1q3_native_none_lc_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *native_params
+        system: {cpu_bind: "2"}
+        fio_global: *fio_lc
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_unlimited
+  lc_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_bare_lc_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "2"}
+        fio_global: *fio_lc
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  lc_iox_none:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_none_lc_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "2"}
+        fio_global: *fio_lc
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  lc_iox_fallback:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_fallback_lc_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "2"}
+        fio_global: *fio_lc
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  lc_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_fifo_lc_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "2"}
+        fio_global: *fio_lc
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  lc_iox_arb_noop:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_arb_noop_lc_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "2"}
+        fio_global: *fio_lc
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+
+  # === Batch track (QD=256, bandwidth-bound) ===
+  batch_native_none:
+    count: 1
+    scene_id_template: "ib_d1q3_native_none_batch_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *native_params
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_unlimited
+  batch_iox_bare:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_bare_batch_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  batch_iox_none:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_none_batch_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  batch_iox_fallback:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_fallback_batch_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  batch_iox_fifo:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_fifo_batch_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+  batch_iox_arb_noop:
+    count: 1
+    scene_id_template: "ib_d1q3_iox_arb_noop_batch_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/fio.yml"
+      parameters:
+        <<: *scx_params
+        system: {cpu_bind: "1-10"}
+        fio_global: *fio_batch
+        io_ext:
+          <<: *io_ext_passthrough
+          cgroup: *cgroup_iox
+
+# ── test_sequences: decomposition ladder (LC + Batch tracks) ──────────────────
+test_sequences:
+  # === LC track: QD=1 latency decomposition ===
+  - sequence_id: "D1Q3_native_none_lc"
+    name: "D1-Q3 native none LC (floor)"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "native none LC QD=1", tenant_groups: ["lc_native_none"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_bare_lc"
+    name: "D1-Q3 iox_bare LC (scx_io substrate)"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "iox_bare LC QD=1", tenant_groups: ["lc_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_none_lc"
+    name: "D1-Q3 iox_none LC (BPF enter+defer)"
+    io_ext_policy: "iox_none"
+    steps:
+      - {name: "iox_none LC QD=1", tenant_groups: ["lc_iox_none"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_fallback_lc"
+    name: "D1-Q3 iox_fallback LC (hook-only tax)"
+    io_ext_policy: "iox_fallback"
+    steps:
+      - {name: "iox_fallback LC QD=1", tenant_groups: ["lc_iox_fallback"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_fifo_lc"
+    name: "D1-Q3 iox_fifo LC (BPF FIFO queue)"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "iox_fifo LC QD=1", tenant_groups: ["lc_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_arb_noop_lc"
+    name: "D1-Q3 iox_arb_noop LC (arbiter invocation tax)"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "iox_arb_noop LC QD=1", tenant_groups: ["lc_iox_arb_noop"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+  # === Batch track: QD=256 bandwidth decomposition ===
+  - sequence_id: "D1Q3_native_none_batch"
+    name: "D1-Q3 native none batch (floor)"
+    io_ext_policy: "nat_none"
+    steps:
+      - {name: "native none batch QD=256", tenant_groups: ["batch_native_none"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_bare_batch"
+    name: "D1-Q3 iox_bare batch (scx_io substrate)"
+    io_ext_policy: "iox_bare"
+    steps:
+      - {name: "iox_bare batch QD=256", tenant_groups: ["batch_iox_bare"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_none_batch"
+    name: "D1-Q3 iox_none batch (BPF enter+defer)"
+    io_ext_policy: "iox_none"
+    steps:
+      - {name: "iox_none batch QD=256", tenant_groups: ["batch_iox_none"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_fallback_batch"
+    name: "D1-Q3 iox_fallback batch (hook-only tax)"
+    io_ext_policy: "iox_fallback"
+    steps:
+      - {name: "iox_fallback batch QD=256", tenant_groups: ["batch_iox_fallback"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_fifo_batch"
+    name: "D1-Q3 iox_fifo batch (BPF FIFO queue)"
+    io_ext_policy: "iox_fifo"
+    steps:
+      - {name: "iox_fifo batch QD=256", tenant_groups: ["batch_iox_fifo"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+  - sequence_id: "D1Q3_iox_arb_noop_batch"
+    name: "D1-Q3 iox_arb_noop batch (arbiter invocation tax)"
+    io_ext_policy: "iox_arb_noop"
+    steps:
+      - {name: "iox_arb_noop batch QD=256", tenant_groups: ["batch_iox_arb_noop"], monitoring_scenes: ["ib_system_metric", "ib_perf_stat"], monitoring_startup_time: 3, duration: 120}
+
+default_sequence: "D1Q3_native_none_lc"
+fail_fast_on_scene_error: true

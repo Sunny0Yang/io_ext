@@ -1,0 +1,15 @@
+{
+  "name": "mqdd_adjacent_merge_8",
+  "tier": 2,
+  "match": "invariants_only",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "D3 merge: bio_merge=true, 8 reads in TWO adjacent groups of 4 (sectors 2560-2584 and 5120-5144) merge into 2 requests of nr=32 each, covering 64 sectors total",
+  "invariants": {
+    "merge_coverage_min": 64,
+    "complete_count_min": 1,
+    "issue_count_lt": 9,
+    "merge_count_min": 1
+  },
+  "expected_merge": true,
+  "notes": "Phase-3 hardened + geometry-fixed (2026-09-01). Old invariants (merge_coverage_min=64 alone) were near-vacuous - 8 UNMERGED nr=8 issues also sum to exactly 64 (audit F-1); added issue_count_lt=9 + merge_count_min=1 so the case FAILs if merging breaks. Old single-group geometry [0,64) collapsed to one scheduler-visible request, making the honest G2 gate structurally unsatisfiable (>=2 candidates never coexist); reworked into TWO 4-read adjacent groups 2528 sectors apart (K03 pattern) -> 2 merged requests reach the scheduler -> merge_count = 8 - 2 = 6 >= 1, coverage 2 x 32 = 64, G2 sees 2 INSERT-pending at first ISSUE. Empirically the merges happen at the PLUG level pre-scheduler, so this measures block-layer merging under --merge-mode=3 as a whole, not the scheduler allow_merge hook in isolation (which the mqdd Phase-3 agent proved structurally unreachable under scx_io - see results/mqdd_phase3/stats_map/README.md). Sectors above the partition-scan zone; the rwbs 'A' (readahead) filter keeps counts clean."
+}

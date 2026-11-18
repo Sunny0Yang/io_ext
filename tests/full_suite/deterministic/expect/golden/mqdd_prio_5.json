@@ -1,0 +1,23 @@
+{
+  "name": "mqdd_prio_5",
+  "tier": 2,
+  "match": "partial",
+  "oracle_source": "algorithm_derivation",
+  "oracle_ref": "read-write lane isolation: BE_READ drains before BE_WRITE due to batching and last_dir=READ default",
+  "expected_dispatch_order": [
+    {"sector": 2560, "op": "read", "nr_sectors": 8},
+    {"sector": 2624, "op": "read", "nr_sectors": 8},
+    {"sector": 2688, "op": "read", "nr_sectors": 8},
+    {"sector": 2752, "op": "read", "nr_sectors": 8},
+    {"sector": 2816, "op": "read", "nr_sectors": 8},
+    {"sector": 5120, "op": "write", "nr_sectors": 8},
+    {"sector": 5248, "op": "write", "nr_sectors": 8}
+  ],
+  "partial_constraints": [
+    {"lane": "read", "sectors_monotonic": true, "all_sectors_present": [2560, 2624, 2688, 2752, 2816]},
+    {"lane": "write", "sectors_monotonic": true, "all_sectors_present": [5120, 5248]},
+    {"all_sectors_in_lane_before_other_lane": {"first": "read", "second": "write"}}
+  ],
+  "expected_merge": false,
+  "notes": "Phase-3 re-spaced sectors (previously 0..64 with insert_count=14 vs trace 7 — 50% background at partition-scan sectors; empirically the 5 reads did NOT plug-merge, 5 separate INSERTs nr=8, but any count gate was noise-assisted). expected_merge corrected to false: 64-sector gaps make merges impossible (the previous true was stale and misleading). Batching<16 drains reads first (R2560..R2816 ascending C-LOOK), then writes (W5120,W5248). This remains a lane-priority test, NOT an ioprio test (ioprio_set via io_uring sqe does not propagate to request ioprio)."
+}

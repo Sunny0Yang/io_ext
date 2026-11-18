@@ -1,0 +1,5 @@
+{
+  "schema": "io_ext_artifact/d3/1",
+  "contents": "scripts-and-docs-only",
+  "note": "D3/D4 figure-rendering script entry only. Figures and the per-run ledger CSV are not shipped; regenerate via experiments/d3_kvmhost/."
+}

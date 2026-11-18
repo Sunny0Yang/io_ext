@@ -1,0 +1,278 @@
+#!/usr/bin/env bpftrace
+/*
+ * scx_io hot-switch timeline monitor (v1)
+ *
+ * 100 ms time-series of bypass/dispatch metrics alongside policy
+ * lifecycle events.  Produces TIMELINE_SAMPLE lines for charting and
+ * a SUMMARY for aggregate statistics.
+ *
+ * Traceable targets (guaranteed by noinline or function-pointer registration):
+ *   scx_io_bio_should_bypass  (global symbol)
+ *   scx_io_bypass_request     (noinline + noipa)
+ *   scx_io_dispatch_request    (elevator_type ops)
+ *   scx_io_insert_requests     (elevator_type ops)
+ *   __blk_mq_sched_dispatch_requests (kernel symbol)
+ *   scx_io_policy_prepare_teardown (noinline)
+ *   scx_io_policy_free            (noinline)
+ */
+
+config = {
+  unstable_addr=enable
+}
+
+BEGIN
+{
+  printf("SCX_IO_SWITCH_TIMELINE_START\n");
+  printf("targets=scx_io_insert_requests,scx_io_bio_should_bypass,scx_io_bypass_request,scx_io_dispatch_request,__blk_mq_sched_dispatch_requests,scx_io_policy_prepare_teardown,scx_io_policy_free\n");
+  printf("reason_enum=0:no_policy,1:policy_unavailable,2:policy_rejected,3:quiesced units=count,ns,us\n");
+  printf("residency=dispatch_return_timestamp-bypass_request_timestamp (keyed by struct request *)\n\n");
+}
+
+// === 1) INSERT ENTRY ===
+
+kprobe:scx_io_insert_requests
+{
+  @sbt_insert_requests_count++;
+  @sbt_insert_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_insert_requests
+/@sbt_insert_start_ns[tid]/
+{
+  @sbt_insert_requests_us = stats((nsecs - @sbt_insert_start_ns[tid]) / 1000);
+  delete(@sbt_insert_start_ns[tid]);
+}
+
+// === 2) BIO SHOULDBYPASS ===
+
+kprobe:scx_io_bio_should_bypass
+{
+  @sbt_bio_should_bypass_count++;
+  @sbt_bio_should_bypass_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_bio_should_bypass
+/@sbt_bio_should_bypass_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbt_bio_should_bypass_start_ns[tid]) / 1000;
+  @sbt_bio_should_bypass_us = stats($delta_us);
+  @sbt_bio_should_bypass_us_hist = hist($delta_us);
+  if (retval) { @sbt_bio_bypass_true_count++; } else { @sbt_bio_bypass_false_count++; }
+  delete(@sbt_bio_should_bypass_start_ns[tid]);
+}
+
+// === 3) BYPASS REQUEST — fallback residency start ===
+
+kprobe:scx_io_bypass_request*
+{
+  $data = (struct scx_io_data *)arg0;
+  $hctx = (struct blk_mq_hw_ctx *)arg1;
+  $rq = (uint64)arg2;
+  $reason = arg4;
+
+  @sbt_bypass_request_count++;
+  @sbt_bypass_reason_count[$reason]++;
+
+  if ($reason == 0) { @sbt_no_policy_count++; }
+  if ($reason == 1) { @sbt_policy_unavailable_count++; }
+  if ($reason == 2) { @sbt_policy_rejected_count++; }
+  if ($reason == 3) { @sbt_quiesced_count++; }
+
+  // Track entering fallback queue for residency measurement
+  if ($rq != 0) {
+    @sbt_fallback_residency_ts[$rq] = nsecs;
+    @sbt_fallback_residency_reason[$rq] = $reason;
+  }
+
+  @sbt_bpf_in_flight_at_bypass = stats($data->bpf_in_flight.counter);
+
+  if ($hctx != 0) {
+    $hdata = (struct scx_io_hctx_data *)$hctx->sched_data;
+    if ($hdata != 0) {
+      @sbt_fallback_in_flight_at_bypass = stats($hdata->fallback_in_flight.counter);
+    }
+  }
+
+  @sbt_bypass_func_start_ns[tid] = nsecs;
+}
+kretprobe:scx_io_bypass_request*
+/@sbt_bypass_func_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbt_bypass_func_start_ns[tid]) / 1000;
+  @sbt_bypass_request_us = stats($delta_us);
+  delete(@sbt_bypass_func_start_ns[tid]);
+}
+
+// === 4) DISPATCH REQUEST — fallback residency end ===
+
+kprobe:scx_io_dispatch_request
+{
+  @sbt_dispatch_request_count++;
+  @sbt_dispatch_func_start_ns[tid] = nsecs;
+}
+
+kretprobe:scx_io_dispatch_request
+/@sbt_dispatch_func_start_ns[tid]/
+{
+  $rq = (uint64)retval;
+  if ($rq != 0) {
+    $start_ns = @sbt_fallback_residency_ts[$rq];
+    if ($start_ns > 0) {
+      $residency_us = (nsecs - $start_ns) / 1000;
+      @sbt_residency_us = stats($residency_us);
+      @sbt_residency_us_hist = hist($residency_us);
+      $reason = @sbt_fallback_residency_reason[$rq];
+      @sbt_dispatch_reason_count[$reason]++;
+      delete(@sbt_fallback_residency_ts[$rq]);
+      delete(@sbt_fallback_residency_reason[$rq]);
+    } else {
+      @sbt_bpf_normal_dispatch_count++;
+    }
+  }
+  $delta_us = (nsecs - @sbt_dispatch_func_start_ns[tid]) / 1000;
+  @sbt_dispatch_request_us = stats($delta_us);
+  delete(@sbt_dispatch_func_start_ns[tid]);
+}
+
+// === 5) BLK_MQ TOP-LEVEL DISPATCH ===
+
+kprobe:__blk_mq_sched_dispatch_requests
+{
+  @sbt_blk_mq_dispatch_count++;
+  @sbt_blk_mq_dispatch_start_ns[tid] = nsecs;
+}
+kretprobe:__blk_mq_sched_dispatch_requests
+/@sbt_blk_mq_dispatch_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbt_blk_mq_dispatch_start_ns[tid]) / 1000;
+  @sbt_blk_mq_dispatch_us = stats($delta_us);
+  delete(@sbt_blk_mq_dispatch_start_ns[tid]);
+}
+
+// === 6) POLICY LIFECYCLE MARKERS (noinline targets) ===
+
+kprobe:scx_io_policy_prepare_teardown
+{
+  $policy = (struct scx_io_policy *)arg0;
+  $reason = arg2;
+  @sbt_prepare_count++;
+  @sbt_prepare_by_reason[$reason]++;
+  @sbt_prepare_start_ns[tid] = nsecs;
+  @sbt_prepare_policy[tid] = arg0;
+  @sbt_prepare_reason[tid] = $reason;
+  if ($reason == 0) { @sbt_prepare_detach_count++; }
+  if ($reason == 1) { @sbt_prepare_replace_count++; }
+}
+
+kretprobe:scx_io_policy_prepare_teardown
+/@sbt_prepare_start_ns[tid]/
+{
+  $delta_us = (nsecs - @sbt_prepare_start_ns[tid]) / 1000;
+  @sbt_prepare_us = stats($delta_us);
+  @sbt_prepare_retval[retval]++;
+  delete(@sbt_prepare_start_ns[tid]);
+  delete(@sbt_prepare_policy[tid]);
+  delete(@sbt_prepare_reason[tid]);
+}
+
+kprobe:scx_io_policy_free
+{
+  @sbt_free_count++;
+  @sbt_last_policy_free_ns = nsecs;
+  // Record unreg→free and prepare→free intervals if unreg or prepare timestamps exist
+  if (@sbt_unreg_ts) {
+    @sbt_detach_unreg_to_free_us = stats((nsecs - @sbt_unreg_ts) / 1000);
+    @sbt_unreg_ts = 0;
+  }
+  if (@sbt_prepare_to_free_ns[@sbt_prepare_policy[arg0]]) {
+    // prepare_to_free tracking via arg0 (policy pointer)
+  }
+}
+
+// === 7) BYPASS AFTER FREE — detect detach completion ===
+kprobe:scx_io_bypass_request
+/@sbt_last_policy_free_ns/
+{
+  $free_to_bypass_us = (nsecs - @sbt_last_policy_free_ns) / 1000;
+  @sbt_free_to_first_bypass_us = stats($free_to_bypass_us);
+  @sbt_bypass_after_free_count++;
+  @sbt_last_policy_free_ns = 0;
+}
+
+// === 8) 100 ms TIMELINE SAMPLE ===
+
+interval:ms:100
+{
+  printf("TIMELINE_SAMPLE timestamp_ms=%llu ts=%llu bypass_total=%llu no_policy=%llu quiesced=%llu dispatch=%llu\n",
+    nsecs / 1000000,
+    nsecs / 1000000000,
+    @s_second_bypass_total,
+    @s_second_no_policy,
+    @s_second_quiesced,
+    @s_second_dispatch);
+
+  zero(@s_second_bypass_total);
+  zero(@s_second_no_policy);
+  zero(@s_second_quiesced);
+  zero(@s_second_dispatch);
+}
+
+// Count per-sample bypass reasons (increment per kprobe hit, read+zero in interval)
+kprobe:scx_io_bypass_request*
+{
+  @s_second_bypass_total++;
+  $reason = arg4;
+  if ($reason == 0) { @s_second_no_policy++; }
+  if ($reason == 3) { @s_second_quiesced++; }
+}
+
+kprobe:scx_io_dispatch_request
+{
+  @s_second_dispatch++;
+}
+
+END
+{
+  printf("\nSCX_IO_SWITCH_TIMELINE_SUMMARY_BEGIN\n");
+
+  printf("\n--- Bypass Reason Distribution ---\n");
+  print(@sbt_bypass_reason_count);
+
+  printf("\n--- Bypass Function Overhead (us) ---\n");
+  print(@sbt_bypass_request_us);
+
+  printf("\n--- Fallback Residency Time (us) ---\n");
+  print(@sbt_residency_us);
+  print(@sbt_residency_us_hist);
+
+  printf("\n--- Dispatched from Fallback by Reason ---\n");
+  print(@sbt_dispatch_reason_count);
+
+  printf("\n--- Dispatch Origins ---\n");
+  print(@sbt_bpf_normal_dispatch_count);
+
+  printf("\n--- Policy Lifecycle ---\n");
+  print(@sbt_prepare_count);
+  print(@sbt_prepare_detach_count);
+  print(@sbt_prepare_replace_count);
+  print(@sbt_prepare_us);
+  print(@sbt_prepare_retval);
+  print(@sbt_free_count);
+  print(@sbt_free_to_first_bypass_us);
+  print(@sbt_bypass_after_free_count);
+
+  printf("\n--- In-flight at Bypass ---\n");
+  print(@sbt_bpf_in_flight_at_bypass);
+  print(@sbt_fallback_in_flight_at_bypass);
+
+  printf("\n--- Function Durations (us) ---\n");
+  print(@sbt_insert_requests_us);
+  print(@sbt_bio_should_bypass_us);
+  print(@sbt_dispatch_request_us);
+  print(@sbt_blk_mq_dispatch_us);
+
+  printf("SCX_IO_SWITCH_TIMELINE_SUMMARY_END\n");
+
+  clear(@sbt_fallback_residency_ts);
+  clear(@sbt_fallback_residency_reason);
+  clear(@sbt_prepare_policy);
+  clear(@sbt_prepare_reason);
+}

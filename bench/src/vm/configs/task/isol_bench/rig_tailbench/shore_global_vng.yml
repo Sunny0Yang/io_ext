@@ -1,0 +1,429 @@
+# rig_tailbench: TailBench/Shore (IISWC'16, MIT CSAIL) GLOBAL-load scheduler
+# matrix (virtme-ng local test). Third real-world scenario for the scx_io +
+# loader_q_* BPF block-scheduler project.
+#
+# Upstream assets (built once, outside Git):
+#   binary  : /home/anon/tailbench/tailbench-v0.9/shore/shore-kits/shore_kits_integrated
+#             (shore-mt 5.0.2 + shore-kits, built per tailbench-v0.9 BUILD-INSTRUCTIONS)
+#   database: /home/anon/tailbench/tailbench-v0.9/shore/db-tpcc-1
+#             (pre-populated 1-warehouse TPC-C Shore volume, 145MB, extracted
+#              selectively from tailbench.inputs.tgz tailbench.inputs/shore/)
+#   templates: shore-kits/run-templates/{cmdfile,shore.conf}.template
+# The runner script (scripts/run_tailbench_rig_virtme.sh) formats the 10G vng
+# nvme test disk, mounts it at /tmp/nvme_data and refreshes a pristine
+# db-tpcc-1 copy there before every sequence, so all Shore I/O (db pages, WAL
+# log, diskrw scratch) lands on the scheduler-under-test device.
+#
+# Design discipline (global load only, mirrors rig_ycsb):
+#   - single real DB workload per sequence (one Shore process, one cgroup)
+#   - NO cgroup io controller values written (no io_weight / io_max / io_latency)
+#   - fixed workload cgroup /sys/fs/cgroup/shore_rig for accounting only
+#   - no arbiter; iox arms attach one root_policy loader at the cgroup v2 root
+#
+# Arms: none / bfq native + iox_q_ddl / iox_q_kyber (scx_io + loader_q_*)
+#
+# TailBench harness semantics used here (verified against tailbench-v0.9
+# harness/tbench_server_integrated.cpp):
+#   - integrated server exits via SYS_exit_group(0) after
+#     TBENCH_WARMUPREQS + TBENCH_MAXREQS responses; lats.bin holds
+#     (queue_ns, svc_ns, sojourn_ns) uint64 triplets for the measured ROI.
+#   - the scene renders cmdfile "@REQS" with TBENCH_MAXREQS; the "test"
+#     command reads NUM_TRXS PER THREAD, so per-thread capacity is
+#     TBENCH_CLIENT_THREADS * TBENCH_MAXREQS. With THREADS=2,
+#     WARMUP=1000, MAXREQS=2000 -> capacity 4000 >= 3000 needed: the harness
+#     always reaches its clean exit_group (no hang, full warmup kept).
+#   - upstream run.sh values: QPS=400, MINSLEEPNS=10000 (THREADS=1 upstream;
+#     2 here for capacity headroom, offered load is still closed at QPS total).
+benchmark_name: "rig_tailbench Shore global-load scheduler matrix (vng local)"
+description: >-
+  Global single-tenant TailBench Shore (Shore-MT/shore-kits TPC-C, integrated
+  TailBench harness) load: 4 scheduler arms (none/bfq native + scx_io
+  q_ddl/q_kyber root-policy loaders) x 1 TPC-C 1-warehouse database on the
+  10G vng nvme test disk, one fixed accounting cgroup, zero io controller
+  writes. Plus one shore_bench.py smoke sequence that proves the
+  scene/cgroup/loader/parse chain with 4K sync read+write+fsync I/O.
+default_sequence: "SHORE_smoke_bench_none"
+
+_common_scene: &common_scene
+  target_device: "nvme0n1"           # vng VM always exposes the QEMU nvme disk as nvme0n1
+  output_dir: "./test_results/isol_bench/rig_tailbench/{group_id}"
+  duration: 600                      # generous bound; real run is startup+3000 reqs @400qps
+
+_native_scene_io_ext: &native_scene_io_ext
+  cleanup_stale_when_no_specs: true  # no loaders of our own; sweep leftovers
+  cleanup_bpffs_pins: true
+  cgroup:
+    path: "/sys/fs/cgroup/shore_rig"   # fixed accounting-only cgroup; no io.* values written
+    controllers:
+    - "io"
+
+_iox_scene_io_ext: &iox_scene_io_ext
+  cleanup_stale: false               # global loader scene owns the loader chain for the sequence
+  cleanup_bpffs_pins: false
+  loaders: []
+  cgroup_policies: []
+  cgroup:
+    path: "/sys/fs/cgroup/shore_rig"
+    controllers:
+    - "io"
+
+_common_tailbench: &common_tailbench
+  home: "/home/anon/tailbench/tailbench-v0.9"
+  working_dir: "/home/anon/tailbench/tailbench-v0.9/shore"
+  bench_script: "/opt/ioext/src/vm/assets/tailbench/shore/shore_bench.py"
+  binary: "/home/anon/tailbench/tailbench-v0.9/shore/shore-kits/shore_kits_integrated"
+  run_build: false                   # assets prebuilt by scripts outside the scene
+  scratch_dir: "/tmp/nvme_data/shore_scratch"   # on the mounted test disk
+  require_latency: true             # fail without parseable lats output
+  latency_unit: "us"
+  binary_latency_format: "triplet"  # TailBench lats.bin = queue/service/sojourn uint64 ns triplets
+  p99_threshold_us: 50000           # operational SLO for the first bringup round
+  slo_deadline_us: 50000
+
+_integrated_env: &integrated_env
+  TBENCH_CLIENT_THREADS: "2"
+  TBENCH_QPS: "400"                 # upstream run.sh offered load
+  TBENCH_WARMUPREQS: "1000"         # buffer-pool warmup before ROI
+  TBENCH_MAXREQS: "2000"            # measured requests -> lats.bin
+  TBENCH_MINSLEEPNS: "10000"
+
+# Calibrated load: vng/QEMU-nvme TPC-C service is ~9-23ms/txn (~100-200 QPS
+# capacity), so upstream QPS=400 is 2-4x overload there (sojourns get dominated
+# by accumulated open-loop lateness). QPS=50 keeps the system below saturation
+# so sojourn percentiles and SLO miss rates are meaningful per-request stats.
+_integrated_env_qps50: &integrated_env_qps50
+  TBENCH_CLIENT_THREADS: "2"
+  TBENCH_QPS: "50"
+  TBENCH_WARMUPREQS: "1000"
+  TBENCH_MAXREQS: "2000"
+  TBENCH_MINSLEEPNS: "10000"
+
+scenes:
+  ib_system_metric:
+    base_scene: "scene/system/system_metric.yml"
+    parameters:
+      collection_mode: "proc"
+      sample_interval: 1.0
+      max_samples: 3600
+      require_samples: true
+      disk_devices:
+      - nvme0n1
+      output_dir: "./test_results/isol_bench/rig_tailbench/system_metric"
+  ib_block_io_latency_cost:
+    base_scene: "scene/block_bpf/block_io_latency_cost.yml"
+    parameters:
+      output_dir: "./test_results/isol_bench/rig_tailbench/block_io_latency_cost"
+      output_file: "./test_results/isol_bench/rig_tailbench/block_io_latency_cost/block_io_latency_cost.bpftrace.log"
+      summary_file: "./test_results/isol_bench/rig_tailbench/block_io_latency_cost/block_io_latency_cost_summary.json"
+      require_events: false
+      privilege:
+        method: "sudo_nopasswd"
+        askpass_script: ""
+
+io_ext_policy_profiles:
+  arm_none:
+    name: "rig tailbench native none"
+    target_device: "nvme0n1"
+    scheduler: "none"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_bfq:
+    name: "rig tailbench native bfq"
+    target_device: "nvme0n1"
+    scheduler: "bfq"
+    io_ext:
+      cleanup_stale_when_no_specs: true
+      cleanup_bpffs_pins: true
+  arm_iox_q_ddl:
+    name: "rig tailbench iox q_ddl"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_ddl_root"
+        path: "/opt/io-ext/userspace/loader_q_ddl"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+  arm_iox_q_kyber:
+    name: "rig tailbench iox q_kyber"
+    target_device: "nvme0n1"
+    scheduler: "scx_io"
+    io_ext:
+      cleanup_stale: true
+      cleanup_bpffs_pins: true
+      stale_loader_patterns:
+      - "loader_arb_"
+      - "loader_q_"
+      - "loader_minimal"
+      root_cgroup:
+        path: "/sys/fs/cgroup"
+        controllers:
+        - "io"
+      root_policies:
+      - name: "q_kyber_root"
+        path: "/opt/io-ext/userspace/loader_q_kyber"
+        scope: "root_policy"
+        args:
+        - "-c"
+        - "{policy_cgroup_path}"
+
+tenant_groups:
+  # ---------- smoke: shore_bench.py 4K sync read+write+fsync on the test disk ----------
+  shore_smoke_bench_none:
+    count: 1
+    scene_id_template: "shore_smoke_bench_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        duration: 300
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_bench"
+          data_file: "/opt/ioext/src/vm/assets/tailbench/shore/db-tpcc-1.smoke"
+          env:
+            TBENCH_CLIENT_THREADS: "1"
+            TBENCH_QPS: "200"
+            TBENCH_WARMUPREQS: "100"
+            TBENCH_MAXREQS: "2000"
+            TBENCH_IO_FILE: "/tmp/nvme_data/iofile.bin"   # runner pre-creates 2G file on test disk
+            TBENCH_IO_MODE: "sync_rw"
+  # ---------- real upstream Shore integrated harness arms ----------
+  shore_int_none:
+    count: 1
+    scene_id_template: "shore_int_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"   # runner refreshes pristine copy per sequence
+          env: *integrated_env
+  shore_int_bfq:
+    count: 1
+    scene_id_template: "shore_int_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "bfq"
+        io_ext: *native_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env
+  shore_int_iox_q_ddl:
+    count: 1
+    scene_id_template: "shore_int_iox_q_ddl_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env
+  shore_int_iox_q_kyber:
+    count: 1
+    scene_id_template: "shore_int_iox_q_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env
+  # ---------- calibrated QPS=50 arms (below saturation on vng nvme) ----------
+  shore_qps50_none:
+    count: 1
+    scene_id_template: "shore_qps50_none_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "none"
+        io_ext: *native_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env_qps50
+  shore_qps50_bfq:
+    count: 1
+    scene_id_template: "shore_qps50_bfq_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "bfq"
+        io_ext: *native_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env_qps50
+  shore_qps50_iox_q_ddl:
+    count: 1
+    scene_id_template: "shore_qps50_iox_q_ddl_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env_qps50
+  shore_qps50_iox_q_kyber:
+    count: 1
+    scene_id_template: "shore_qps50_iox_q_kyber_t{idx1}"
+    template:
+      base_scene: "scene/io_ext/tailbench_shore.yml"
+      parameters:
+        <<: *common_scene
+        scheduler: "scx_io"
+        io_ext: *iox_scene_io_ext
+        tailbench:
+          <<: *common_tailbench
+          mode: "shore_integrated"
+          data_file: "/tmp/nvme_data/db-tpcc-1"
+          env: *integrated_env_qps50
+
+test_sequences:
+- sequence_id: "SHORE_smoke_bench_none"
+  name: "smoke: shore_bench.py 4K sync rw (native none)"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "shore_bench smoke none"
+    tenant_groups:
+    - "shore_smoke_bench_none"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 300
+- sequence_id: "SHORE_int_none"
+  name: "shore integrated native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "shore integrated none"
+    tenant_groups:
+    - "shore_int_none"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_int_bfq"
+  name: "shore integrated native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "shore integrated bfq"
+    tenant_groups:
+    - "shore_int_bfq"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_int_iox_q_ddl"
+  name: "shore integrated iox scx_io q_ddl"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "shore integrated iox q_ddl"
+    tenant_groups:
+    - "shore_int_iox_q_ddl"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_int_iox_q_kyber"
+  name: "shore integrated iox scx_io q_kyber"
+  io_ext_policy: "arm_iox_q_kyber"
+  steps:
+  - name: "shore integrated iox q_kyber"
+    tenant_groups:
+    - "shore_int_iox_q_kyber"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_qps50_none"
+  name: "shore integrated calibrated QPS=50 native none"
+  io_ext_policy: "arm_none"
+  steps:
+  - name: "shore qps50 none"
+    tenant_groups:
+    - "shore_qps50_none"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_qps50_bfq"
+  name: "shore integrated calibrated QPS=50 native bfq"
+  io_ext_policy: "arm_bfq"
+  steps:
+  - name: "shore qps50 bfq"
+    tenant_groups:
+    - "shore_qps50_bfq"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_qps50_iox_q_ddl"
+  name: "shore integrated calibrated QPS=50 iox scx_io q_ddl"
+  io_ext_policy: "arm_iox_q_ddl"
+  steps:
+  - name: "shore qps50 iox q_ddl"
+    tenant_groups:
+    - "shore_qps50_iox_q_ddl"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600
+- sequence_id: "SHORE_qps50_iox_q_kyber"
+  name: "shore integrated calibrated QPS=50 iox scx_io q_kyber"
+  io_ext_policy: "arm_iox_q_kyber"
+  steps:
+  - name: "shore qps50 iox q_kyber"
+    tenant_groups:
+    - "shore_qps50_iox_q_kyber"
+    monitoring_scenes:
+    - "ib_system_metric"
+    - "ib_block_io_latency_cost"
+    monitoring_startup_time: 3
+    duration: 600

@@ -1,0 +1,52 @@
+# =========================================================================
+# experiments/reproduction / kyber / fio_none_lc.fio
+# 实验2 kyber：none 臂 LC 侧。coloc step 协议（[MSC] 主会话补定）：
+#   0-30s LC QD32 基线 -> 30-60s LC QD64 step up -> 60-90s 恢复 QD32。
+# 三段用 stonewall 串行（一次 fio 调用内段间零间隔，"phase 间不中断调度器
+# 状态" [MSC]）。BE 侧在 fio_none_be.fio 中并发跑 90s 不间断。
+# [PLAN] LC 4k randread；文件 /data/lc.bin（[MSC] coloc LC 用 lc.bin）。
+# 日志命名：io_weight_none_lc_p{1,2,3}（[PLAN] <algo>_<arm>_<phase>）
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/lc.bin
+
+[lc_p1]
+rw=randread
+bs=4k
+iodepth=32
+runtime=30
+randseed=2026111401
+write_lat_log=io_weight_none_lc_p1
+write_bw_log=io_weight_none_lc_p1
+write_iops_log=io_weight_none_lc_p1
+
+[lc_p2]
+stonewall
+rw=randread
+bs=4k
+iodepth=64
+runtime=30
+randseed=2026111402
+write_lat_log=io_weight_none_lc_p2
+write_bw_log=io_weight_none_lc_p2
+write_iops_log=io_weight_none_lc_p2
+
+[lc_p3]
+stonewall
+rw=randread
+bs=4k
+iodepth=32
+runtime=30
+randseed=2026111403
+write_lat_log=io_weight_none_lc_p3
+write_bw_log=io_weight_none_lc_p3
+write_iops_log=io_weight_none_lc_p3

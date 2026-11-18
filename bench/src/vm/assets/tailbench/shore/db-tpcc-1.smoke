@@ -1,0 +1,4 @@
+ioext-bench TailBench Shore smoke database placeholder.
+This file is intentionally tiny. The `shore_bench.py` smoke helper reads it to
+produce deterministic I/O and TailBench-compatible latency samples. For real
+Shore experiments, provide the upstream `db-tpcc-1` asset described in README.md.

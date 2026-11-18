@@ -1,0 +1,34 @@
+{
+  "schema": "dyn_tenant_iocost_coef/1",
+  "measured_at_utc": "2026-11-06T08:24Z",
+  "target_device": "nvme0n1 (bare-metal ROOT disk, rootfs /dev/nvme0n1p2; coefficients measured through the file-backed path)",
+  "provenance": {
+    "tool": "kernel/linux-7.3.1 tools/cgroup/iocost_coef_gen.py --testfile-size-gb 16 (TESTFILE mode)",
+    "tool_sha256": "1e77b38c0dc3e01017d80453e08adfedd495e9fffb416f1543100439505f9a47",
+    "stdout_log": "contract/iocost_coef_gen_stdout.log",
+    "mode_note": "kvmhost used --testdev (exclusive disk, destructive writes to /dev/sdb); bm FORBIDS raw-device writes (root disk), so the tool ran in its testfile mode against a file on the root filesystem -- the same nvme0n1 device the campaign workloads use. elevator/nomerges were temporarily set by the tool and restored (verified post-probe).",
+    "pv_shim_note": "pv absent on bm; a pass-through shim was used during the probe",
+    "qos_predeclare_note": "QOS predeclared, identical structure/percentages as the kvmhost contract and the m2 fig2 io_cost arms (rpct/wpct=95, rlat/wlat=20000us, min=50 max=150): consistency across figures, not tuned."
+  },
+  "model": {
+    "ctrl": "user",
+    "model": "linear",
+    "rbps": 1877961028,
+    "rseqiops": 436504,
+    "rrandiops": 504812,
+    "wbps": 1895474286,
+    "wseqiops": 436118,
+    "wrandiops": 324051
+  },
+  "qos": {
+    "enable": 1,
+    "ctrl": "user",
+    "rpct": 95,
+    "rlat": 20000,
+    "wpct": 95,
+    "wlat": 20000,
+    "min": 50,
+    "max": 150
+  },
+  "measured_device_major_minor": "259:0"
+}

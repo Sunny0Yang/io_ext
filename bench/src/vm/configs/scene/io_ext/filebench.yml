@@ -1,0 +1,33 @@
+name: "io-ext FileBench fileserver workload template"
+id: "ioext_filebench_fileserver_workload"
+type: "io_ext"
+class_name: "IoExtFilebenchScene"
+module_path: "vm.scene.io_ext.filebench"
+parameters:
+  target_device: "nvme0n1"
+  scheduler: "default"
+  filebench:
+    workload: "fileserver"
+    runtime_sec: 10
+    threads: 1
+    workload_dir: "/tmp/filebench_data"
+    profile_dir: "/usr/local/share/filebench/workloads"
+    file_size: null
+    num_files: null
+  io_ext:
+    cgroup:
+      path: "/sys/fs/cgroup/ioext_filebench_fileserver_workload"
+      controllers: ["io"]
+      # io_weight 标量会写入 cgroup 默认权重（default 100），兼容 virtme-ng/NVMe；
+      # 如需设备级权重覆盖，可用映射形式 {default: 100, device: 500}。
+      io_weight: 100
+      # io_max 支持 rbps/wbps/riops/wiops；"max" 表示不设置硬限速。
+      io_max:
+        rbps: "max"
+        wbps: "max"
+        riops: "max"
+        wiops: "max"
+  drop_caches_before_run: true
+  cooldown_sec: 1
+  score_threshold: 1000
+  output_dir: "./test_results/io_ext/filebench"

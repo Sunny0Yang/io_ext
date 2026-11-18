@@ -1,0 +1,15 @@
+name: "网络密集型场景"
+id: "network_intensive"
+type: "streaming"
+class_name: "NetworkIntensiveScene"
+module_path: "src.vm.scene.streaming.network_intensive"
+parameters:
+  duration: 200
+  num_tcp_streams: 20
+  num_udp_streams: 10
+  tcp_port_base: 5000
+  udp_port_base: 6000
+  network_latency: 50
+  packet_loss: 0
+  bandwidth_limit: "1000mbit"
+  output_dir: "./test_results"

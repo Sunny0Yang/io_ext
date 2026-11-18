@@ -1,0 +1,10 @@
+{
+  "name": "merge_probe_mode1_invariants",
+  "tier": 1,
+  "match": "invariants_only",
+  "invariants": {
+    "insert_count_min": 1,
+    "complete_count_min": 1
+  },
+  "notes": "mode=1 ALLOW_ALL: hook reachable, merges may or may not occur depending on timing"
+}

@@ -1,0 +1,24 @@
+name: "BPF map/cgroup memory overhead monitor"
+id: "bpf_space_overhead"
+type: "system"
+class_name: "BpfSpaceOverheadScene"
+module_path: "vm.scene.system.bpf_space_overhead"
+parameters:
+  duration: 300
+  output_dir: "/home/anon/ioext-bench/test_results/system/bpf_space_overhead"
+  output_file: "/home/anon/ioext-bench/test_results/system/bpf_space_overhead/bpf_space_overhead_summary.json"
+  sample_interval: 5.0
+  max_samples: 7200
+  require_snapshot: false
+  warmup_time: 0
+  bpftool_bin: "bpftool"
+  map_name_regex: "(scx|ioext|iosched|io_queue|active_cgroup_ids|policy_meta|noop_arbiter|q_noop|q_accept_noop|q_none|arb_noop)"
+  pin_path_regex: "/sys/fs/bpf/(.*(scx|ioext|iosched|io_queue|active_cgroup|policy_meta).*)"
+  include_all_maps: false
+  cgroup_paths:
+    - "/sys/fs/cgroup"
+  cgroup_path_globs: []
+  privilege:
+    method: "sudo_nopasswd"
+    askpass_script: ""
+    env_var: "SUDO_PASSWORD"

@@ -1,0 +1,5 @@
+{
+  "schema": "io_ext_artifact/m1m2_bm/1",
+  "contents": "scripts-and-docs-only",
+  "note": "M1/M2' figure-rendering scripts only. Raw run data, summary tables and figures are not shipped; regenerate via experiments/m1m2_bm/ campaigns."
+}

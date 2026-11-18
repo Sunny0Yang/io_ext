@@ -1,0 +1,53 @@
+# =========================================================================
+# experiments/reproduction / d2fq / fio_none_lc.fio
+# 实验7 d2fq：none 臂 LC 侧。两流均 4k randread QD32（[MSC] 主会话补定：
+# d2fq 两流都用 4k randread QD32，同类型流使字节份额==权重比 的检验干净，
+# read/write 类型成本不对称性排除在本实验外）。
+# LC step 协议同 coloc 系（[MSC]：90s，QD 32->64->32）。
+# 实验臂集：none / iox（Native VM 内 N/A：ioextd2fq 需 NVMe WRRU，virtio-blk
+# 上 d2fq_en 被 -EINVAL 拒绝 —— D2FQ_NATIVE_PORT_20261110.md:70，主会话已定决策）。
+# 日志命名：d2fq_none_lc_p{1,2,3}
+# =========================================================================
+[global]
+ioengine=libaio
+direct=1
+time_based=1
+group_reporting=1
+percentile_list=50:90:95:99:99.9
+log_avg_msec=500
+numjobs=1
+randrepeat=0
+norandommap=1
+filename=/data/lc.bin
+
+[lc_p1]
+rw=randread
+bs=4k
+iodepth=32
+runtime=30
+randseed=2026111401
+write_lat_log=d2fq_none_lc_p1
+write_bw_log=d2fq_none_lc_p1
+write_iops_log=d2fq_none_lc_p1
+
+[lc_p2]
+stonewall
+rw=randread
+bs=4k
+iodepth=64
+runtime=30
+randseed=2026111402
+write_lat_log=d2fq_none_lc_p2
+write_bw_log=d2fq_none_lc_p2
+write_iops_log=d2fq_none_lc_p2
+
+[lc_p3]
+stonewall
+rw=randread
+bs=4k
+iodepth=32
+runtime=30
+randseed=2026111403
+write_lat_log=d2fq_none_lc_p3
+write_bw_log=d2fq_none_lc_p3
+write_iops_log=d2fq_none_lc_p3

@@ -1,0 +1,41 @@
+name: "混合IO密集型场景"
+id: "mixed_io"
+type: "streaming"
+class_name: "MixedIOScene"
+module_path: "src.vm.scene.streaming.mixed_io"
+parameters:
+  duration: 200
+  files:
+    large_files:
+      count: 1
+      size_gb: 1
+    medium_files:
+      count: 5
+      size_mb: 100
+    small_files:
+      count: 100
+      size_mb: 1
+  threads:
+    large_file_random_read:
+      count: 4
+      priority: "normal"
+    large_file_random_write:
+      count: 2
+      priority: "normal"
+    medium_file_sequential_read:
+      count: 3
+      priority: "normal"
+    medium_file_mixed_access:
+      count: 3
+      priority: "normal"
+    small_file_batch_access:
+      count: 2
+      priority: "normal"
+    file_scan_index:
+      count: 1
+      priority: "normal"
+  io_pattern:
+    read_write_ratio: 0.7
+    random_sequential_ratio: 0.4
+    block_size_kb: 64
+  output_dir: "/home/anon/ioext-bench/test_results"

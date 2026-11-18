@@ -1,0 +1,21 @@
+name: "LLM文本生成场景"
+id: "llm_generate"
+type: "streaming"
+class_name: "LLMGenerationScene"
+module_path: "src.vm.scene.streaming.llm_generate"
+parameters:
+  model_path: "src/vm/assets/streaming/llm_generate/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
+  system_prompt: "You are a helpful AI assistant that answers questions accurately, helpfully, and harmlessly."
+  chat_history: [
+    {"role": "user", "content": "I need to understand quantum computing for a research project I'm working on. Could you explain what it is and how it differs from classical computing?"},
+    {"role": "assistant", "content": "Quantum computing is a revolutionary approach to computation that leverages the principles of quantum mechanics to process information. Unlike classical computing, which uses bits (0s and 1s) as the fundamental unit of information, quantum computing uses quantum bits or 'qubits.'\n\nHere are the key differences:\n\n1. **Superposition**: While classical bits can only be in one state at a time (either 0 or 1), qubits can exist in a superposition of both states simultaneously. This allows quantum computers to process multiple possibilities at once.\n\n2. **Entanglement**: Qubits can be 'entangled' with each other, meaning the state of one qubit is directly related to the state of another, regardless of the distance between them. This property enables quantum computers to perform complex calculations more efficiently.\n\n3. **Interference**: Quantum algorithms use interference to amplify correct answers and suppress incorrect ones, allowing them to solve certain problems much faster than classical computers.\n\n4. **Processing Power**: For specific problems, quantum computers can provide exponential speedups. Problems that would take classical computers millions of years might be solvable by quantum computers in minutes or hours.\n\nQuantum computers excel at tasks like factoring large numbers, searching unsorted databases, simulating quantum systems (like molecules for drug discovery), and solving optimization problems.\n\nHowever, they're not universally superior to classical computers. They're specifically advantageous for certain classes of problems, while classical computers remain better for everyday tasks and many types of calculations."}
+  ]
+  current_prompt: "Now that I understand the basics, could you explain quantum entanglement as detailed as possible? It seems particularly important for quantum computing."
+  num_iterations: 2
+  max_tokens: 2048
+  temperature: 0.0
+  model_kwargs:
+    n_ctx: 4096
+    n_threads: 4
+    n_gpu_layers: 0
+  output_dir: "./test_results"

@@ -1,0 +1,16 @@
+name: "Minecraft游戏场景"
+id: "game_play"
+type: "interactive"
+class_name: "MinecraftGameplayScene"
+module_path: "src.vm.scene.interactive.game_play"
+parameters:
+  prism_dir: "/home/anon/Downloads/PrismLauncher-Linux-Qt6-Portable-9.2"
+  instance_dir: "/home/anon/Downloads/PrismLauncher-Linux-Qt6-Portable-9.2/instances/1.21.5"
+  java_path: "/home/anon/Downloads/PrismLauncher-Linux-Qt6-Portable-9.2/java/java-runtime-delta/bin/java"
+  game_dir: "/home/anon/Downloads/PrismLauncher-Linux-Qt6-Portable-9.2/instances/1.21.5/minecraft"
+  assets_dir: "/home/anon/Downloads/PrismLauncher-Linux-Qt6-Portable-9.2/assets"
+  natives_dir: "/home/anon/Downloads/PrismLauncher-Linux-Qt6-Portable-9.2/instances/1.21.5/natives"
+  username: "Steve"
+  perf_data_dir: "/tmp/game_play"
+  duration: 0
+  output_dir: "./test_results"
